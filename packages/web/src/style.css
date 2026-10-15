@@ -64,3 +64,5 @@ table.mines { width: 100%; border-collapse: collapse; margin: 6px 0; }
 table.mines th { text-align: left; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); padding: 3px 4px; }
 table.mines td { padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.04); white-space: nowrap; }
 .summary { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
+.chat-input { display: flex; gap: 6px; margin-top: 8px; }
+.chat-input input { flex: 1; min-width: 0; }

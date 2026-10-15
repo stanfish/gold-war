@@ -20,7 +20,6 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const { msg, error, connected, send } = useGameSocket<SeatUpdate>(seat, k);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [selected, setSelected] = useState<string | null>(null);
-  const [messages, setMessages] = useState<string[]>(['']);
   const round = msg?.view.round;
 
   // New round: reset drafts to STAY.
@@ -28,7 +27,6 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
     if (!msg) return;
     setDrafts(Object.fromEntries(msg.view.workers.map((w) => [w.id, { action: 'STAY' } as Draft])));
     setSelected(msg.view.workers[0]?.id ?? null);
-    setMessages(['']);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round, msg?.gameId]);
 
@@ -123,7 +121,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
 
   const submit = () => {
     const actions: SubmittedAction[] = view.workers.map((w) => ({ worker_id: w.id, ...(drafts[w.id] ?? { action: 'STAY' }) }));
-    send({ type: 'submit', actions, messages: messages.filter((m) => m.trim()) });
+    send({ type: 'submit', actions });
   };
 
   return (
@@ -212,25 +210,6 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
             <div className={`cost ${affordable ? '' : 'danger'}`}>
               Cost {total} / {view.gold} gold {affordable ? '' : '— not affordable'}
             </div>
-            {view.settings.table_talk && (
-              <div className="talk">
-                {messages.map((m, i) => (
-                  <input
-                    key={i}
-                    maxLength={200}
-                    placeholder="Message to opponent (optional)"
-                    value={m}
-                    disabled={!playing}
-                    onChange={(e) => {
-                      const next = [...messages];
-                      next[i] = e.target.value;
-                      if (i === next.length - 1 && e.target.value && next.length < 3) next.push('');
-                      setMessages(next);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
             {invalidOrders.map((w) => (
               <p key={w.id} className="danger small">
                 {w.id}: {orderError(w, drafts[w.id])}
@@ -257,6 +236,17 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
             <p className="muted small">Select a worker, then click a highlighted square to MOVE (or use the step buttons). Wheel/drag to zoom/pan.</p>
           </section>
 
+          {view.settings.table_talk && (
+            <section>
+              <h3>Table talk</h3>
+              <ChatLog chat={msg.chat} me={seat} />
+              <ChatInput
+                disabled={msg.phase === 'finished' || msg.phase === 'error'}
+                onSend={(text) => send({ type: 'chat', text })}
+              />
+            </section>
+          )}
+
           <section>
             <h3>Mines &amp; payouts</h3>
             <MinesPayout
@@ -267,12 +257,6 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
             />
           </section>
 
-          {view.settings.table_talk && (
-            <section>
-              <h3>Table talk</h3>
-              <ChatLog chat={msg.chat} me={seat} />
-            </section>
-          )}
         </aside>
       </main>
     </div>
@@ -413,6 +397,34 @@ function MinesPayout({
         <div key={i}>{describeEvent(e, seat)}</div>
       ))}
       {end && <div style={{ marginTop: 6 }}>{describeEvent(end, seat)}</div>}
+    </div>
+  );
+}
+
+/** Real-time table talk: Enter or Send delivers the message to the opponent immediately. */
+function ChatInput({ disabled, onSend }: { disabled: boolean; onSend: (text: string) => void }) {
+  const [text, setText] = useState('');
+  const sendNow = () => {
+    const t = text.trim();
+    if (!t) return;
+    onSend(t);
+    setText('');
+  };
+  return (
+    <div className="chat-input">
+      <input
+        maxLength={200}
+        placeholder={disabled ? 'Game over' : 'Message to opponent…'}
+        value={text}
+        disabled={disabled}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') sendNow();
+        }}
+      />
+      <button disabled={disabled || !text.trim()} onClick={sendNow}>
+        Send
+      </button>
     </div>
   );
 }

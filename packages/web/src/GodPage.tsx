@@ -196,11 +196,6 @@ function OrdersList(props: { player: PlayerId; orders: Orders | undefined; state
           {a.worker_id}: {describeOrder(a, player, props.state)}
         </div>
       ))}
-      {orders?.messages.map((m, i) => (
-        <div key={`m${i}`} className="indent muted">
-          💬 {m}
-        </div>
-      ))}
     </div>
   );
 }

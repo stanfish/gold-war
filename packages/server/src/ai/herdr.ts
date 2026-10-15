@@ -225,10 +225,14 @@ export class HerdrAgentPlayer implements AiPlayer {
     throw new Error('agent still blocked after startup dialogs');
   }
 
+  private turn = 0;
+
   async decide(input: AiRoundInput, deadline: number): Promise<AiResponse> {
     const r = input.round;
-    const stateFile = `state-${r}.json`;
-    const responseFile = `response-${r}.json`;
+    // Unique files per turn: a round can have extra turns when the opponent writes in table talk.
+    const tag = input.trigger === 'round' ? `${r}` : `${r}-chat${++this.turn}`;
+    const stateFile = `state-${tag}.json`;
+    const responseFile = `response-${tag}.json`;
     await writeFile(join(this.workdir, stateFile), JSON.stringify(input, null, 2));
     await rm(join(this.workdir, responseFile), { force: true });
 
@@ -239,7 +243,9 @@ export class HerdrAgentPlayer implements AiPlayer {
       try {
         await this.prompt(
           attempt === 1
-            ? `Round ${r}: read ${stateFile}, decide, then write ONLY the response JSON to ${responseFile} (format in briefing.md). Every worker needs one action; keep the set affordable.`
+            ? input.trigger === 'round'
+              ? `Round ${r}: read ${stateFile}, decide, then write ONLY the response JSON to ${responseFile} (format in briefing.md). Every worker needs one action; keep the set affordable.`
+              : `Round ${r}: your opponent wrote in table talk. Read ${stateFile} (see "chat" and "my_current_orders"), then write ONLY the response JSON to ${responseFile}: reply in "messages" if you want, and give the full set of actions (repeat your current orders or revise them).`
             : `Your previous answer for round ${r} was rejected: ${lastErr.message}. Rewrite ${responseFile} with valid JSON exactly in the briefing.md format.`,
           remaining,
         );

@@ -3,7 +3,8 @@ import { defaultSettings, type PlayerId } from '@gold-war/engine';
 import { BotPlayer } from '../src/ai/bot.js';
 import { parseAiResponse } from '../src/ai/parse.js';
 import type { AiPlayer } from '../src/ai/types.js';
-import { GameSession, eventsFor, sanitizeMessages, type AiFactory } from '../src/session.js';
+import { GameSession, MAX_AI_REPLIES_PER_ROUND, MAX_MESSAGES_PER_ROUND, cleanMessage, eventsFor, type AiFactory } from '../src/session.js';
+import type { AiRoundInput } from '../src/ai/types.js';
 
 const bots: AiFactory = (_agent, ctx) => new BotPlayer(ctx);
 const settings = (over = {}) => ({ ...defaultSettings(30), roundSeconds: 60, fullRoundTimer: false, ...over });
@@ -38,17 +39,15 @@ describe('GameSession', () => {
     expect(s.phase).toBe('waiting');
     s.humanConnected('p2');
     expect(s.phase).toBe('playing');
-    expect(s.submit('p1', { actions: [{ worker_id: 'w1', action: 'MOVE', dx: 3, dy: 0 }], messages: ['hi', 'x'.repeat(500)] })).toBeNull();
+    expect(s.submit('p1', { actions: [{ worker_id: 'w1', action: 'MOVE', dx: 3, dy: 0 }] })).toBeNull();
     expect(s.state.round).toBe(1);
-    expect(s.seatUpdate('p1').mySubmission?.messages).toEqual(['hi', 'x'.repeat(200)]);
+    expect(s.seatUpdate('p1').mySubmission?.actions).toHaveLength(1);
     expect(s.seatUpdate('p2').mySubmission).toBeNull();
     expect(s.godUpdate().pending.p1?.actions).toHaveLength(1);
     expect(s.godUpdate().pending.p2).toBeUndefined();
     expect(JSON.stringify(s.seatUpdate('p2'))).not.toContain('"dx":3');
-    expect(s.seatUpdate('p2').chat).toEqual([]); // not revealed before resolution
     s.submit('p2', { actions: [] });
     expect(s.state.round).toBe(2);
-    expect(s.seatUpdate('p2').chat).toHaveLength(2);
     expect(s.godUpdate().pending).toEqual({});
     expect(s.godUpdate().history[0]?.submissions.p1?.actions[0]).toMatchObject({ action: 'MOVE', dx: 3 });
 
@@ -150,6 +149,83 @@ describe('GameSession', () => {
   });
 });
 
+describe('table talk', () => {
+  const humans = async (over = {}) => {
+    const s = new GameSession(
+      { settings: settings({ tableTalk: true, fullRoundTimer: true, ...over }), seats: { p1: { type: 'human' }, p2: { type: 'human' } }, seed: 1 },
+      { makeAi: bots, logDir: null },
+    );
+    await s.start();
+    s.humanConnected('p1');
+    s.humanConnected('p2');
+    return s;
+  };
+
+  it('delivers messages immediately, independent of orders', async () => {
+    const s = await humans();
+    expect(s.postChat('p1', 'want to split m3?')).toBeNull();
+    expect(s.seatUpdate('p2').chat).toMatchObject([{ round: 1, sender: 'p1', text: 'want to split m3?' }]);
+    expect(s.postChat('p2', 'no')).toBeNull();
+    expect(s.seatUpdate('p1').chat.map((c) => c.text)).toEqual(['want to split m3?', 'no']);
+    expect(s.godUpdate().chat).toHaveLength(2);
+    expect(s.state.round).toBe(1); // chatting does not resolve anything
+    s.stop();
+  });
+
+  it('enforces table talk toggle and per-round limit', async () => {
+    const off = await humans({ tableTalk: false });
+    expect(off.postChat('p1', 'hi')).toMatch(/off/);
+    off.stop();
+    const s = await humans();
+    for (let i = 0; i < MAX_MESSAGES_PER_ROUND; i++) expect(s.postChat('p1', `m${i}`)).toBeNull();
+    expect(s.postChat('p1', 'one too many')).toMatch(/max/);
+    expect(s.postChat('p1', '   ')).toMatch(/empty/);
+    s.stop();
+  });
+
+  it('AI gets a reply turn when the opponent writes, can answer and revise orders, capped per round', async () => {
+    const inputs: AiRoundInput[] = [];
+    const chatty: AiFactory = (agent) => ({
+      agent,
+      start: async () => {},
+      decide: async (input) => {
+        inputs.push(input);
+        const reply = input.trigger === 'message';
+        return {
+          actions: [{ worker_id: 'w1', action: 'MOVE', dx: reply ? 2 : 1, dy: 0 }],
+          messages: reply ? [`re: ${input.chat.at(-1)?.text}`] : [],
+          notes: '',
+          thinking: reply ? 'replied' : 'opened',
+        };
+      },
+      cancel: async () => {},
+      stop: async () => {},
+    });
+    const s = new GameSession(
+      { settings: settings({ tableTalk: true, fullRoundTimer: true }), seats: { p1: { type: 'ai', agent: 'claude-sonnet' }, p2: { type: 'human' } }, seed: 1 },
+      { makeAi: chatty, logDir: null },
+    );
+    await s.start();
+    s.humanConnected('p2');
+    await flush();
+    expect(inputs.map((i) => i.trigger)).toEqual(['round']);
+
+    s.postChat('p2', 'truce?');
+    await flush();
+    expect(inputs.at(-1)).toMatchObject({ trigger: 'message', my_current_orders: [{ dx: 1 }] });
+    expect(s.seatUpdate('p2').chat.map((c) => c.text)).toEqual(['truce?', 're: truce?']);
+    expect(s.godUpdate().pending.p1?.actions[0]).toMatchObject({ dx: 2 }); // revised orders
+    expect(s.godUpdate().ai.p1?.thinking[1]).toContain('after table talk');
+
+    for (let i = 0; i < 5; i++) {
+      s.postChat('p2', `ping ${i}`);
+      await flush();
+    }
+    expect(inputs.filter((i) => i.trigger === 'message')).toHaveLength(MAX_AI_REPLIES_PER_ROUND);
+    s.stop();
+  });
+});
+
 describe('helpers', () => {
   it('eventsFor hides opponent positional events, keeps all collects and public bookkeeping', () => {
     const ev = [
@@ -164,9 +240,11 @@ describe('helpers', () => {
     expect(eventsFor([...ev], 'p1').map((e) => e.type)).toEqual(['cost', 'income', 'delete', 'collect', 'collect']);
   });
 
-  it('sanitizeMessages respects table talk toggle and limits', () => {
-    expect(sanitizeMessages(['a'], false)).toEqual([]);
-    expect(sanitizeMessages(['a', '', 'b', 'c', 'd', 5], true)).toEqual(['a', 'b', 'c']);
+  it('cleanMessage trims, caps length, rejects empty / non-strings', () => {
+    expect(cleanMessage('  hi ')).toBe('hi');
+    expect(cleanMessage('x'.repeat(500))).toHaveLength(200);
+    expect(cleanMessage('   ')).toBeNull();
+    expect(cleanMessage(5)).toBeNull();
   });
 
   it('parseAiResponse accepts fenced JSON and rejects junk', () => {

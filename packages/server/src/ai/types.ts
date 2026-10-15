@@ -1,9 +1,15 @@
-import type { AiState, PlayerId, RoundEvent } from '@gold-war/engine';
+import type { AiState, ChatEntry, PlayerId, RoundEvent, SubmittedAction } from '@gold-war/engine';
 import type { AiResponse } from './parse.js';
 
 /** Everything an AI receives for one round. */
 export interface AiRoundInput extends AiState {
-  last_round: { events: RoundEvent[]; opponent_messages: string[] } | null;
+  /** 'round' = new round; 'message' = the opponent wrote in table talk during this round. */
+  trigger: 'round' | 'message';
+  last_round: { events: RoundEvent[] } | null;
+  /** Recent table talk, oldest first (empty when table talk is off). */
+  chat: ChatEntry[];
+  /** Orders this player already submitted this round (null if none yet). */
+  my_current_orders: SubmittedAction[] | null;
   notes: string;
 }
 

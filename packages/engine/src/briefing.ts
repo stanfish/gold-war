@@ -19,7 +19,7 @@ files, panes, processes or network resources: you only know what the state file 
 - Rounds: ${s.roundsTotal}. Round timer: ${s.roundSeconds}s${s.fullRoundTimer ? ' (every round lasts the full timer)' : ' (a round ends early once both players submitted)'}.
 - Move range: 1-${s.moveRange} squares per MOVE.
 - Start: ${s.startWorkers} workers and ${s.startGold} gold each.
-- Table talk: ${s.tableTalk ? 'ON — you may send up to 3 short messages (<=200 chars) per round; the opponent sees them after the round resolves. Bluffing is allowed.' : 'OFF — messages are ignored.'}
+- Table talk: ${s.tableTalk ? 'ON — real-time chat. Messages you put in "messages" (<=200 chars each, up to 10 per round) reach the opponent immediately. When the opponent writes to you during a round you get an extra turn (trigger "message", at most 2 per round) to reply and optionally revise your orders. Pure talk: no game effect. Bluffing is allowed.' : 'OFF — messages are ignored.'}
 
 ## Rules
 Each round both players act simultaneously. Every worker gets exactly 1 action:
@@ -65,10 +65,15 @@ You will be told the path of a state JSON file, shaped like:
   "opponent": {"gold": 21.0, "workers": 5},
   "settings": {"map_size": ${s.mapSize}, "move_range": ${s.moveRange}, "round_seconds": ${s.roundSeconds}, "table_talk": ${s.tableTalk}},
   "status": "active", "result": null,
-  "last_round": {"events": ["..."], "opponent_messages": ["..."]},
+  "trigger": "round",
+  "last_round": {"events": ["..."]},
+  "chat": [{"round": 7, "sender": "p2", "text": "...", "at": 1700000000000}],
+  "my_current_orders": null,
   "notes": "your notes from the previous round"
 }
 \`\`\`
+- "trigger": "round" for the round's main turn, "message" for an extra turn because the opponent wrote to you.
+- "my_current_orders": orders you already submitted this round (on a "message" turn), else null.
 
 ## Each round: output
 Write ONLY this JSON (no prose) to the response file path you are given:
@@ -80,12 +85,13 @@ Write ONLY this JSON (no prose) to the response file path you are given:
     {"worker_id": "w3", "action": "STAY"},
     {"worker_id": "w4", "action": "DELETE"}
   ],
-  "messages": ["optional table talk"],
+  "messages": ["optional table talk, delivered immediately"],
   "notes": "persistent notes you want back next round (mines, opponent patterns, plans)",
   "rationale": "one short line per worker: what it does and why (shown to spectators)"
 }
 \`\`\`
 - MOVE needs dx/dy (|dx|+|dy| between 1 and ${s.moveRange}) or a target x/y. COLLECT needs mine_id. STAY/DELETE need nothing.
-- Give every worker exactly one action. Keep "notes" compact; it is your only memory between rounds.
+- Give every worker exactly one action, on every turn (on a "message" turn, repeat or revise your orders).
+- Keep "notes" compact; it is your only memory between rounds.
 `;
 }

@@ -25,14 +25,18 @@ import {
 import type { AiResponse } from './ai/parse.js';
 import type { AiPlayer, AiPlayerContext, AiRoundInput } from './ai/types.js';
 
-export const MAX_MESSAGES = 3;
+/** Table talk is real-time: per player, per round. */
+export const MAX_MESSAGES_PER_ROUND = 10;
 export const MAX_MESSAGE_CHARS = 200;
+/** Extra AI turns per round triggered by opponent messages (bounds AI-vs-AI chatter and cost). */
+export const MAX_AI_REPLIES_PER_ROUND = 2;
+/** Don't start an AI reply turn with less time than this left in the round. */
+const MIN_REPLY_MS = 20_000;
 
 export type AiFactory = (agent: string, ctx: AiPlayerContext) => AiPlayer;
 
 interface PlayerSubmission {
   actions: SubmittedAction[];
-  messages: string[];
 }
 
 interface RoundRecord {
@@ -56,12 +60,11 @@ export function eventsFor(events: RoundEvent[], player: PlayerId): RoundEvent[] 
   });
 }
 
-export function sanitizeMessages(raw: unknown, tableTalk: boolean): string[] {
-  if (!tableTalk || !Array.isArray(raw)) return [];
-  return raw
-    .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
-    .slice(0, MAX_MESSAGES)
-    .map((m) => m.trim().slice(0, MAX_MESSAGE_CHARS));
+/** Trimmed, length-capped message text, or null if empty / not a string. */
+export function cleanMessage(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim().slice(0, MAX_MESSAGE_CHARS);
+  return t.length ? t : null;
 }
 
 /** One running game: owns the engine state, the round timer, AI players, chat and the game log. */
@@ -81,6 +84,11 @@ export class GameSession {
   private history: RoundRecord[] = [];
   private connected = new Set<PlayerId>();
   private ai: Partial<Record<PlayerId, { player: AiPlayer; panel: AiPanel }>> = {};
+  /** AI players with a turn in flight (one at a time per agent). */
+  private aiBusy = new Set<PlayerId>();
+  /** AI players with unanswered opponent messages. */
+  private aiUnread = new Set<PlayerId>();
+  private aiReplies: Record<PlayerId, number> = { p1: 0, p2: 0 };
   private listeners = new Set<() => void>();
   private readonly createdAt = new Date().toISOString();
 
@@ -174,56 +182,101 @@ export class GameSession {
     const ms = this.state.settings.roundSeconds * 1000;
     this.deadline = Date.now() + ms;
     this.timer = setTimeout(() => this.resolveNow(), ms);
-    for (const p of PLAYERS) if (this.ai[p]) void this.runAi(p, token);
+    this.aiReplies = { p1: 0, p2: 0 };
+    this.aiUnread.clear();
+    for (const p of PLAYERS) if (this.ai[p]) void this.runAi(p, token, 'round');
     this.emit();
   }
 
-  private aiInput(p: PlayerId): AiRoundInput {
+  private aiInput(p: PlayerId, trigger: 'round' | 'message'): AiRoundInput {
     const last = this.history.at(-1);
     return {
       ...aiState(this.state, p),
-      last_round: last
-        ? {
-            events: eventsFor(last.events, p),
-            opponent_messages: last.submissions[opponentOf(p)]?.messages ?? [],
-          }
-        : null,
+      trigger,
+      last_round: last ? { events: eventsFor(last.events, p) } : null,
+      chat: this.state.settings.tableTalk ? this.chat.slice(-30) : [],
+      my_current_orders: this.submissions[p]?.actions ?? null,
       notes: this.ai[p]?.panel.notes ?? '',
     };
   }
 
-  private async runAi(p: PlayerId, token: number): Promise<void> {
+  /**
+   * One AI turn. 'round' = the round's main decision; 'message' = an extra turn because the opponent wrote
+   * in table talk: the AI may reply and revise its orders.
+   */
+  private async runAi(p: PlayerId, token: number, trigger: 'round' | 'message'): Promise<void> {
     const a = this.ai[p]!;
     const round = this.state.round;
+    this.aiBusy.add(p);
+    this.aiUnread.delete(p);
     a.panel.status = 'thinking';
     this.emit();
     let resp: AiResponse;
     try {
-      resp = await a.player.decide(this.aiInput(p), this.deadline!);
+      resp = await a.player.decide(this.aiInput(p, trigger), this.deadline!);
     } catch (e) {
+      this.aiBusy.delete(p);
       if (token !== this.roundToken) return;
-      a.panel.status = 'failed';
-      a.panel.lastError = `round ${round}: ${(e as Error).message}`;
-      // Failure = every worker STAYs; submit now so the round need not wait out the timer.
-      this.submit(p, { actions: [], messages: [] });
+      a.panel.lastError = `round ${round}${trigger === 'message' ? ' (chat reply)' : ''}: ${(e as Error).message}`;
+      if (this.submissions[p]) {
+        a.panel.status = 'submitted'; // a failed chat reply keeps the earlier orders
+        this.emit();
+      } else {
+        a.panel.status = 'failed';
+        // Failure = every worker STAYs; submit now so the round need not wait out the timer.
+        this.submit(p, { actions: [] });
+      }
       return;
     }
+    this.aiBusy.delete(p);
     if (token !== this.roundToken) return; // too late, round already resolved
     a.panel.status = 'submitted';
     a.panel.lastError = null;
     a.panel.notes = resp.notes;
-    a.panel.thinking[round] = resp.thinking;
-    this.submit(p, { actions: resp.actions, messages: resp.messages });
+    const prev = a.panel.thinking[round];
+    a.panel.thinking[round] = trigger === 'message' && prev ? `${prev}\n\n— after table talk —\n${resp.thinking}` : resp.thinking;
+    for (const m of resp.messages) this.postChat(p, m);
+    this.submit(p, { actions: resp.actions });
+    this.maybeAiReply(p);
+  }
+
+  /** Give an AI an extra turn to answer opponent messages, if it has any unread and the round allows it. */
+  private maybeAiReply(p: PlayerId): void {
+    const a = this.ai[p];
+    if (!a || a.player.agent === 'bot' || !this.aiUnread.has(p)) return;
+    if (this.phase !== 'playing' || this.aiBusy.has(p) || this.deadline === null) return;
+    if (this.aiReplies[p] >= MAX_AI_REPLIES_PER_ROUND || this.deadline - Date.now() < MIN_REPLY_MS) return;
+    this.aiReplies[p]++;
+    void this.runAi(p, this.roundToken, 'message');
+  }
+
+  /**
+   * Table talk: delivered to the opponent (and GOD view) immediately. Allowed any time the game is running.
+   * Returns an error string if rejected.
+   */
+  postChat(p: PlayerId, raw: unknown): string | null {
+    if (!this.state.settings.tableTalk) return 'table talk is off';
+    if (this.phase === 'finished' || this.phase === 'error') return 'game is over';
+    const text = cleanMessage(raw);
+    if (!text) return 'empty message';
+    const round = this.state.round;
+    const sent = this.chat.filter((c) => c.round === round && c.sender === p).length;
+    if (sent >= MAX_MESSAGES_PER_ROUND) return `max ${MAX_MESSAGES_PER_ROUND} messages per round`;
+    this.chat.push({ round, sender: p, text, at: Date.now() });
+    const opp = opponentOf(p);
+    if (this.ai[opp]) {
+      this.aiUnread.add(opp);
+      this.maybeAiReply(opp);
+    }
+    this.emit();
+    return null;
   }
 
   /** Record (or replace) a player's submission for the open round. Returns an error string if rejected. */
-  submit(p: PlayerId, sub: { actions: unknown; messages?: unknown }): string | null {
+  submit(p: PlayerId, sub: { actions: unknown }): string | null {
     if (this.phase !== 'playing') return 'no round is open';
     if (!Array.isArray(sub.actions)) return 'actions must be an array';
-    this.submissions[p] = {
-      actions: sub.actions as SubmittedAction[],
-      messages: sanitizeMessages(sub.messages, this.state.settings.tableTalk),
-    };
+    this.submissions[p] = { actions: sub.actions as SubmittedAction[] };
     // With fullRoundTimer the round always runs to the deadline; players may resubmit until then.
     if (!this.state.settings.fullRoundTimer && PLAYERS.every((q) => this.submissions[q])) this.resolveNow();
     else this.emit();
@@ -238,8 +291,11 @@ export class GameSession {
     for (const p of PLAYERS) {
       const a = this.ai[p];
       if (a && a.panel.status === 'thinking') {
-        a.panel.status = 'failed';
-        a.panel.lastError = `round ${this.state.round}: timed out`;
+        if (this.submissions[p]) a.panel.status = 'submitted'; // chat reply cut off; earlier orders stand
+        else {
+          a.panel.status = 'failed';
+          a.panel.lastError = `round ${this.state.round}: timed out`;
+        }
         void a.player.cancel();
       }
     }
@@ -248,7 +304,6 @@ export class GameSession {
     const subs = this.submissions;
     const { state, events } = resolveRound(this.state, subs);
     this.state = state;
-    for (const p of PLAYERS) for (const text of subs[p]?.messages ?? []) this.chat.push({ round, sender: p, text });
     this.history.push({ round, submissions: subs, events });
     this.submissions = {};
     this.deadline = null;
@@ -295,7 +350,7 @@ export class GameSession {
       seat: p,
       view: playerView(this.state, p),
       lastEvents: last ? eventsFor(last.events, p) : [],
-      mySubmission: mine ? { actions: mine.actions, messages: mine.messages } : null,
+      mySubmission: mine ? { actions: mine.actions } : null,
     };
   }
 
@@ -316,6 +371,7 @@ export class GameSession {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.roundToken++;
+    this.aiBusy.clear();
     this.listeners.clear();
     await Promise.all(PLAYERS.map((p) => this.ai[p]?.player.stop()));
   }

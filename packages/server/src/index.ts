@@ -126,10 +126,8 @@ app.server.on('upgrade', (req, socket, head) => {
       } catch {
         return send(ws, { type: 'error', message: 'bad JSON' });
       }
-      if (msg.type === 'submit') {
-        const err = s.submit(role, msg);
-        if (err) send(ws, { type: 'error', message: err });
-      }
+      const err = msg.type === 'submit' ? s.submit(role, msg) : msg.type === 'chat' ? s.postChat(role, msg.text) : 'unknown message';
+      if (err) send(ws, { type: 'error', message: err });
     });
     send(ws, updateFor(s, role));
     if (role !== 'god') s.humanConnected(role);

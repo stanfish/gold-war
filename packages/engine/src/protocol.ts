@@ -18,6 +18,8 @@ export interface ChatEntry {
   round: number;
   sender: PlayerId;
   text: string;
+  /** Epoch ms when it was sent. */
+  at: number;
 }
 
 export type Phase = 'starting' | 'waiting' | 'playing' | 'finished' | 'error';
@@ -54,7 +56,7 @@ interface UpdateBase {
   deadline: number | null;
   submitted: Record<PlayerId, boolean>;
   seats: Record<PlayerId, SeatConfig>;
-  /** Revealed chat (messages are revealed when their round resolves). */
+  /** Table talk, delivered in real time. */
   chat: ChatEntry[];
 }
 
@@ -65,12 +67,11 @@ export interface SeatUpdate extends UpdateBase {
   /** Events of the last resolved round that this player is entitled to see. */
   lastEvents: RoundEvent[];
   /** This player's own submission for the open round, if any. */
-  mySubmission: { actions: SubmittedAction[]; messages: string[] } | null;
+  mySubmission: { actions: SubmittedAction[] } | null;
 }
 
 export interface Orders {
   actions: SubmittedAction[];
-  messages: string[];
 }
 
 export interface GodUpdate extends UpdateBase {
@@ -84,4 +85,4 @@ export interface GodUpdate extends UpdateBase {
 
 export type ServerMessage = SeatUpdate | GodUpdate | { type: 'error'; message: string };
 
-export type ClientMessage = { type: 'submit'; actions: SubmittedAction[]; messages?: string[] };
+export type ClientMessage = { type: 'submit'; actions: SubmittedAction[] } | { type: 'chat'; text: string };

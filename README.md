@@ -50,6 +50,7 @@ pnpm typecheck
 - No LLM orchestrator: the server orchestrates deterministically.
 - Missing/failed actions (human timeout or AI failure) → STAY (DELETE if STAY unaffordable).
 - 0 workers loses unless both players have 0 workers (then more gold wins).
+- Table talk is real-time (separate from orders); an AI gets up to 2 extra turns per round to answer messages.
 - Invalid actions are converted to STAY *before* the affordability check.
 - MOVE = up to N orthogonal steps in any mix of directions (destination within Manhattan distance N).
 - Vision uses final positions only; squares passed through during a MOVE are not revealed.
