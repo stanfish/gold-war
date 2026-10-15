@@ -68,10 +68,17 @@ export interface SeatUpdate extends UpdateBase {
   mySubmission: { actions: SubmittedAction[]; messages: string[] } | null;
 }
 
+export interface Orders {
+  actions: SubmittedAction[];
+  messages: string[];
+}
+
 export interface GodUpdate extends UpdateBase {
   type: 'god';
   state: GameState;
-  history: { round: number; events: RoundEvent[] }[];
+  /** Orders submitted so far in the open round (latest version per player). */
+  pending: Partial<Record<PlayerId, Orders>>;
+  history: { round: number; events: RoundEvent[]; submissions: Partial<Record<PlayerId, Orders>> }[];
   ai: Partial<Record<PlayerId, AiPanel>>;
 }
 

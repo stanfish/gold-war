@@ -42,10 +42,15 @@ describe('GameSession', () => {
     expect(s.state.round).toBe(1);
     expect(s.seatUpdate('p1').mySubmission?.messages).toEqual(['hi', 'x'.repeat(200)]);
     expect(s.seatUpdate('p2').mySubmission).toBeNull();
+    expect(s.godUpdate().pending.p1?.actions).toHaveLength(1);
+    expect(s.godUpdate().pending.p2).toBeUndefined();
+    expect(JSON.stringify(s.seatUpdate('p2'))).not.toContain('"dx":3');
     expect(s.seatUpdate('p2').chat).toEqual([]); // not revealed before resolution
     s.submit('p2', { actions: [] });
     expect(s.state.round).toBe(2);
     expect(s.seatUpdate('p2').chat).toHaveLength(2);
+    expect(s.godUpdate().pending).toEqual({});
+    expect(s.godUpdate().history[0]?.submissions.p1?.actions[0]).toMatchObject({ action: 'MOVE', dx: 3 });
 
     // Seat payload must never include the full state or undiscovered mines.
     const u = s.seatUpdate('p2') as unknown as Record<string, unknown>;

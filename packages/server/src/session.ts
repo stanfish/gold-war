@@ -304,7 +304,8 @@ export class GameSession {
       ...this.base(),
       type: 'god',
       state: this.state,
-      history: this.history.map((h) => ({ round: h.round, events: h.events })),
+      pending: this.submissions,
+      history: this.history.map((h) => ({ round: h.round, events: h.events, submissions: h.submissions })),
       ai,
     };
   }

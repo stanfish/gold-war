@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PLAYERS, type GodUpdate, type PlayerId } from '@gold-war/engine';
+import { PLAYERS, type GameState, type GodUpdate, type Orders, type PlayerId, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
 import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
 
@@ -7,6 +7,8 @@ export function GodPage({ k }: { k: string | null }) {
   const { msg, error, connected } = useGameSocket<GodUpdate>('god', k);
   const [historyRound, setHistoryRound] = useState<number | null>(null);
   const [thinkRound, setThinkRound] = useState<Partial<Record<PlayerId, number>>>({});
+  /** null = live orders of the open round. */
+  const [ordersRound, setOrdersRound] = useState<number | null>(null);
 
   if (!msg) {
     return (
@@ -93,6 +95,34 @@ export function GodPage({ k }: { k: string | null }) {
           })}
 
           <section>
+            <h3>
+              Orders{' '}
+              <select value={ordersRound ?? ''} onChange={(e) => setOrdersRound(e.target.value ? Number(e.target.value) : null)}>
+                <option value="">round {state.round} (live)</option>
+                {[...msg.history].reverse().map((h) => (
+                  <option key={h.round} value={h.round}>
+                    round {h.round}
+                  </option>
+                ))}
+              </select>
+            </h3>
+            {PLAYERS.map((p) => {
+              const live = ordersRound === null;
+              const orders = live ? msg.pending[p] : msg.history.find((h) => h.round === ordersRound)?.submissions[p];
+              return (
+                <OrdersList
+                  key={p}
+                  player={p}
+                  orders={orders}
+                  // Destinations only make sense against current positions.
+                  state={live ? state : null}
+                  waiting={live && msg.phase === 'playing' && state.status === 'active'}
+                />
+              );
+            })}
+          </section>
+
+          <section>
             <h3>Table talk</h3>
             <ChatLog chat={msg.chat} />
           </section>
@@ -132,6 +162,45 @@ export function GodPage({ k }: { k: string | null }) {
           </section>
         </aside>
       </main>
+    </div>
+  );
+}
+
+function describeOrder(a: SubmittedAction, p: PlayerId, state: GameState | null): string {
+  const w = state?.players[p].workers.find((x) => x.id === a.worker_id);
+  switch (String(a.action).toUpperCase()) {
+    case 'MOVE': {
+      const dx = a.dx ?? (a.x !== undefined && w ? a.x - w.x : 0);
+      const dy = a.dy ?? (a.y !== undefined && w ? a.y - w.y : 0);
+      const steps = [dy < 0 && `${-dy}↑`, dy > 0 && `${dy}↓`, dx < 0 && `${-dx}←`, dx > 0 && `${dx}→`].filter(Boolean).join(' ');
+      return `MOVE ${steps || '(no steps)'}${w ? ` (${w.x},${w.y}) → (${w.x + dx},${w.y + dy})` : ''}`;
+    }
+    case 'COLLECT': {
+      const m = state?.mines.find((x) => x.id === a.mine_id);
+      return `COLLECT ${a.mine_id}${m ? ` (+${m.payout})` : ''}`;
+    }
+    default:
+      return String(a.action).toUpperCase();
+  }
+}
+
+function OrdersList(props: { player: PlayerId; orders: Orders | undefined; state: GameState | null; waiting: boolean }) {
+  const { player, orders } = props;
+  return (
+    <div className="small" style={{ marginBottom: 8 }}>
+      <b style={{ color: PLAYER_COLORS[player] }}>{player.toUpperCase()}</b>{' '}
+      {!orders && <span className="muted">{props.waiting ? 'not submitted yet' : 'no orders (all STAY)'}</span>}
+      {orders && orders.actions.length === 0 && <span className="muted">empty submission (all STAY)</span>}
+      {orders?.actions.map((a, i) => (
+        <div key={i} className="indent">
+          {a.worker_id}: {describeOrder(a, player, props.state)}
+        </div>
+      ))}
+      {orders?.messages.map((m, i) => (
+        <div key={`m${i}`} className="indent muted">
+          💬 {m}
+        </div>
+      ))}
     </div>
   );
 }
