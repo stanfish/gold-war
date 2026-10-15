@@ -1,0 +1,11 @@
+{
+  "name": "gold-war",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "sim": "pnpm -C packages/engine sim",
+    "dev": "pnpm -C packages/server dev & pnpm -C packages/web dev"
+  }
+}
