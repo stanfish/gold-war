@@ -229,6 +229,17 @@ describe('collect', () => {
     expect(events.find((e) => e.type === 'invalid')).toMatchObject({ workerId: 'w1' });
   });
 
+  it('cannot collect a mine only the opponent discovered (name or location known is not enough)', () => {
+    const g = game([{ id: 'm1', x: 25, y: 25, payout: 5 }]);
+    know(g, 'p2', 'm1'); // only p2 has seen it; p1 may have heard its name/location
+    const one = { actions: [act('w1', 'COLLECT', { mine_id: 'm1' }), ...allStay().actions.slice(1)] };
+    const { state, events } = resolveRound(g, { p1: one, p2: one });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'invalid', player: 'p1', workerId: 'w1', reason: 'mine m1 is not known' }));
+    expect(events.find((e) => e.type === 'collect')).toMatchObject({ workers: { p1: 0, p2: 1 }, gained: { p1: 0, p2: 5 } });
+    expect(state.players.p1.workers[0]).toMatchObject({ x: 15, y: 15 }); // stayed, not sent to base via collect
+    expect(state.players.p1.gold2).toBe(40 - 5); // 5 x STAY
+  });
+
   it('mine discovered in round N is collectable only from N+1', () => {
     const g = game([{ id: 'm1', x: 15, y: 9, payout: 3 }]);
     // Round 1: move w1 north to (15,11) -> sees y 9..13 -> discovers m1.

@@ -35,7 +35,7 @@ Each round both players act simultaneously. Every worker gets exactly 1 action:
 |---------|----------|--------|
 | MOVE    | 1 gold   | Take 1-${s.moveRange} orthogonal steps (up/down/left/right, mixed freely, no diagonal steps): any square with \\|dx\\|+\\|dy\\| <= ${s.moveRange}. Cannot leave the map. |
 | STAY    | 0.5 gold | Do nothing. |
-| COLLECT | 1 gold   | Collect from any known mine, from anywhere. The worker then returns to the base. |
+| COLLECT | 1 gold   | Collect from a mine YOU discovered (in your known_mines), from anywhere. The worker then returns to the base. |
 | DELETE  | 0 gold   | Remove the worker for the rest of the game. |
 
 - Costs are paid every round. Gold may be fractional (0.5 steps).
@@ -43,6 +43,9 @@ Each round both players act simultaneously. Every worker gets exactly 1 action:
   AFTER the round's moves/collects. Squares passed through during a MOVE are not seen.
 - Mines are permanent once seen. A mine first seen at the end of round N can be collected from round N+1
   (state marks this as "collectable").
+- You can only COLLECT mines your own workers have seen (listed in "known_mines"). Mine names you learn from
+  the opponent's collect results, or locations the opponent tells you in table talk, do NOT count: such a
+  COLLECT is invalid and the worker just STAYs. To use such a mine, send a worker to see it first.
 - Contested collection: if both players COLLECT from the same mine in the same round, the player who sent
   more workers takes the whole payout; a tie splits it evenly. Extra workers beyond your opponent's count add
   nothing, and two of your own workers on an uncontested mine still earn only one payout.
