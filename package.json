@@ -6,6 +6,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "sim": "pnpm -C packages/engine sim",
-    "dev": "pnpm -C packages/server dev & pnpm -C packages/web dev"
+    "dev": "pnpm -C packages/server dev & pnpm -C packages/web dev",
+    "build": "pnpm -C packages/web build",
+    "start": "pnpm -C packages/server start"
   }
 }

@@ -44,7 +44,8 @@ export function scriptedBot(view: AiState, seed = 1): BotDecision {
     if (roundsLeft > 3 && budget2 - 2 >= keepReserve2 && budget2 > 8) {
       const n = view.settings.map_size;
       const range = view.settings.move_range;
-      const start = (workerIdx(w.id) + Math.floor(rng() * 4)) % 4;
+      // Spread workers over the 4 directions; rotate every few rounds to sweep new ground.
+      const start = (workerIdx(w.id) + Math.floor(view.round / 3) + Math.floor(rng() * 1.2)) % 4;
       for (let k = 0; k < 4; k++) {
         const [dx, dy] = DIRS[(start + k) % 4]!;
         const dist = Math.min(range, dx > 0 ? n - 1 - w.x : dx < 0 ? w.x : dy > 0 ? n - 1 - w.y : w.y);

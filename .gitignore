@@ -2,3 +2,4 @@ node_modules
 dist
 games/
 .DS_Store
+.playwright-mcp/
