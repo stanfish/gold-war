@@ -103,6 +103,8 @@ export function describeEvent(e: RoundEvent, me?: PlayerId): string {
       return `${who(e.player)} discovered ${e.mineId}`;
     case 'cost':
       return `${who(e.player)} paid ${e.amount} gold`;
+    case 'income':
+      return `${who(e.player)} earned ${e.amount} gold`;
     case 'end':
       return `GAME OVER: ${e.result.winner ? `${who(e.result.winner)} wins` : 'draw'} (${e.result.reason})`;
   }

@@ -216,6 +216,11 @@ export function resolveRound(
     });
   }
 
+  for (const p of PLAYERS) {
+    const amount = events.reduce((s, e) => s + (e.type === 'collect' ? e.gained[p] : 0), 0);
+    events.push({ type: 'income', player: p, amount });
+  }
+
   // 6. Deletes.
   for (const p of PLAYERS) {
     const ps = state.players[p];

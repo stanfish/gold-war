@@ -19,11 +19,11 @@ export function GodPage({ k }: { k: string | null }) {
   const n = state.settings.mapSize;
 
   const units: MapUnit[] = PLAYERS.flatMap((p) =>
-    state.players[p].workers.map((w) => ({ key: `${p}${w.id}`, x: w.x, y: w.y, color: PLAYER_COLORS[p], label: w.id.slice(1) })),
+    state.players[p].workers.map((w) => ({ key: `${p}${w.id}`, x: w.x, y: w.y, color: PLAYER_COLORS[p], label: w.id.slice(1), title: `${p} ${w.id}` })),
   );
   const mines = state.mines.map((m) => {
     const by = PLAYERS.filter((p) => state.players[p].knownMines[m.id] !== undefined);
-    return { ...m, dim: by.length === 0 };
+    return { ...m, dim: by.length === 0, note: by.length ? `known by ${by.join(', ')}` : 'undiscovered' };
   });
 
   const shownRound = historyRound ?? msg.history.at(-1)?.round ?? null;

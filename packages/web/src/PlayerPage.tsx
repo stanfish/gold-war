@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { visibleCells, type PlayerId, type SeatUpdate, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
 import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
+import type { RoundEvent } from '@gold-war/engine';
 
 type Draft = { action: 'MOVE'; dx: number; dy: number } | { action: 'COLLECT'; mine_id: string } | { action: 'STAY' } | { action: 'DELETE' };
 
@@ -76,11 +77,18 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const units: MapUnit[] = [
     ...view.workers.map((w) => {
       const d = drafts[w.id];
-      return { key: w.id, x: w.x, y: w.y, color: PLAYER_COLORS[seat], label: w.id.slice(1), selected: w.id === selected && !!d };
+      return { key: w.id, x: w.x, y: w.y, color: PLAYER_COLORS[seat], label: w.id.slice(1), title: `your ${w.id}`, selected: w.id === selected && !!d };
     }),
-    ...view.visible_enemy_workers.map((w, i) => ({ key: `e${i}`, x: w.x, y: w.y, color: PLAYER_COLORS[opp] })),
+    ...view.visible_enemy_workers.map((w, i) => ({ key: `e${i}`, x: w.x, y: w.y, color: PLAYER_COLORS[opp], title: 'enemy worker' })),
     ...(view.visible_enemy_workers.length === 0
-      ? view.enemy_last_seen.map((w, i) => ({ key: `s${i}`, x: w.x, y: w.y, color: PLAYER_COLORS[opp], stale: true }))
+      ? view.enemy_last_seen.map((w, i) => ({
+          key: `s${i}`,
+          x: w.x,
+          y: w.y,
+          color: PLAYER_COLORS[opp],
+          stale: true,
+          title: `enemy worker, last seen round ${w.round}`,
+        }))
       : []),
   ];
 
@@ -88,7 +96,15 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   for (const w of view.workers) {
     const d = drafts[w.id];
     if (d?.action === 'MOVE' && (d.dx !== 0 || d.dy !== 0))
-      units.push({ key: `g${w.id}`, x: w.x + d.dx, y: w.y + d.dy, color: PLAYER_COLORS[seat], stale: true, label: w.id.slice(1) });
+      units.push({
+        key: `g${w.id}`,
+        x: w.x + d.dx,
+        y: w.y + d.dy,
+        color: PLAYER_COLORS[seat],
+        stale: true,
+        label: w.id.slice(1),
+        title: `${w.id} planned destination`,
+      });
   }
 
   const onCellClick = (x: number, y: number) => {
@@ -139,7 +155,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
           base={view.base}
           explored={view.explored}
           visible={visible}
-          mines={view.known_mines.map((m) => ({ ...m, dim: !m.collectable }))}
+          mines={view.known_mines.map((m) => ({ ...m, dim: !m.collectable, note: m.collectable ? undefined : 'collectable next round' }))}
           units={units}
           highlight={playing ? moveTargets : undefined}
           onCellClick={onCellClick}
@@ -241,11 +257,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
 
           <section>
             <h3>Last round</h3>
-            <div className="events small">
-              {msg.lastEvents.filter((e) => e.type !== 'move').map((e, i) => (
-                <div key={i}>{describeEvent(e, seat)}</div>
-              ))}
-            </div>
+            <LastRound events={msg.lastEvents} seat={seat} />
           </section>
 
           {view.settings.table_talk && (
@@ -288,6 +300,49 @@ function MoveControls(props: {
       <button disabled={props.disabled || used === 0} title="clear steps" onClick={() => props.onChange(0, 0)}>
         ✕
       </button>
+    </div>
+  );
+}
+
+/** Last round, split into you / opponent / contests. Opponent side only has fog-safe totals. */
+function LastRound({ events, seat }: { events: RoundEvent[]; seat: PlayerId }) {
+  if (!events.length) return <div className="muted small">Nothing yet.</div>;
+  const opp: PlayerId = seat === 'p1' ? 'p2' : 'p1';
+  const sum = (p: PlayerId, type: 'cost' | 'income') =>
+    events.reduce((s, e) => s + (e.type === type && e.player === p ? e.amount : 0), 0);
+  const side = (p: PlayerId) => {
+    const paid = sum(p, 'cost');
+    const earned = sum(p, 'income');
+    const net = earned - paid;
+    return { paid, earned, net: `${net >= 0 ? '+' : ''}${net}` };
+  };
+  const mine = side(seat);
+  const theirs = side(opp);
+  const ownDetail = events.filter((e) => 'player' in e && e.player === seat && !['cost', 'income', 'move'].includes(e.type));
+  const oppDeleted = events.filter((e) => e.type === 'delete' && e.player === opp).length;
+  const contests = events.filter((e) => e.type === 'collect');
+  const end = events.find((e) => e.type === 'end');
+  return (
+    <div className="events small">
+      <div style={{ color: PLAYER_COLORS[seat] }}>
+        <b>You</b>: paid {mine.paid}, earned {mine.earned} → <b>{mine.net}</b>
+      </div>
+      {ownDetail.map((e, i) => (
+        <div key={i} className="indent">
+          {describeEvent(e, seat)}
+        </div>
+      ))}
+      <div style={{ color: PLAYER_COLORS[opp], marginTop: 6 }}>
+        <b>Opponent</b>: paid {theirs.paid}, earned {theirs.earned} → <b>{theirs.net}</b>
+        {oppDeleted > 0 && `, deleted ${oppDeleted} worker${oppDeleted > 1 ? 's' : ''}`}
+      </div>
+      {contests.length > 0 && <div style={{ marginTop: 6 }} className="muted">Your collects</div>}
+      {contests.map((e, i) => (
+        <div key={i} className="indent">
+          {describeEvent(e, seat)}
+        </div>
+      ))}
+      {end && <div style={{ marginTop: 6 }}>{describeEvent(end, seat)}</div>}
     </div>
   );
 }

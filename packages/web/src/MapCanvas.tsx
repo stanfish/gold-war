@@ -7,7 +7,8 @@ export interface MapMine {
   payout: number;
   /** Dim mines are known but not yet collectable, or (god view) undiscovered by anyone. */
   dim?: boolean;
-  label?: string;
+  /** Extra line shown in the hover tooltip. */
+  note?: string;
 }
 
 export interface MapUnit {
@@ -19,6 +20,8 @@ export interface MapUnit {
   /** Stale sightings render hollow. */
   stale?: boolean;
   selected?: boolean;
+  /** Hover tooltip text. */
+  title?: string;
 }
 
 export interface MapCanvasProps {
@@ -53,6 +56,7 @@ export function MapCanvas(props: MapCanvasProps) {
   const [size, setSize] = useState({ w: 600, h: 600 });
   const [view, setView] = useState({ zoom: 1, ox: 0, oy: 0 });
   const drag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const [hover, setHover] = useState<{ x: number; y: number; px: number; py: number } | null>(null);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -179,6 +183,28 @@ export function MapCanvas(props: MapCanvasProps) {
         }
       });
     }
+
+    // Mine name tags, drawn last so workers never hide them.
+    if (cell >= 10) {
+      const fs = Math.max(9, Math.min(13, Math.floor(cell * 0.42)));
+      g.font = `600 ${fs}px system-ui`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      for (const m of props.mines) {
+        const text = m.id;
+        const w = g.measureText(text).width + 6;
+        const h = fs + 3;
+        const cx = (m.x + 0.5) * cell;
+        // Tag sits above the mine; on the top row it goes below so it is not clipped.
+        const top = m.y === 0 ? (m.y + 1) * cell - 1 : m.y * cell - h + 1;
+        g.globalAlpha = m.dim ? 0.6 : 0.9;
+        g.fillStyle = '#000';
+        g.fillRect(cx - w / 2, top, w, h);
+        g.fillStyle = COLORS.mine;
+        g.fillText(text, cx, top + h / 2 + 0.5);
+        g.globalAlpha = 1;
+      }
+    }
   }, [props, size, view, cell, n, padX, padY]);
 
   const toCell = (clientX: number, clientY: number) => {
@@ -206,7 +232,13 @@ export function MapCanvas(props: MapCanvasProps) {
         onMouseDown={(e) => (drag.current = { x: e.clientX, y: e.clientY, moved: false })}
         onMouseMove={(e) => {
           const d = drag.current;
-          if (!d) return;
+          if (!d) {
+            const c = toCell(e.clientX, e.clientY);
+            const rect = canvasRef.current!.getBoundingClientRect();
+            setHover(c ? { ...c, px: e.clientX - rect.left, py: e.clientY - rect.top } : null);
+            return;
+          }
+          setHover(null);
           const dx = e.clientX - d.x;
           const dy = e.clientY - d.y;
           if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
@@ -223,13 +255,38 @@ export function MapCanvas(props: MapCanvasProps) {
             if (c) props.onCellClick(c.x, c.y);
           }
         }}
-        onMouseLeave={() => (drag.current = null)}
+        onMouseLeave={() => {
+          drag.current = null;
+          setHover(null);
+        }}
       />
+      {hover && <Tooltip {...hover} mines={props.mines} units={props.units} wrapW={size.w} />}
       <div className="map-controls">
         <button onClick={() => setView((v) => ({ ...v, zoom: Math.min(8, v.zoom * 1.3) }))}>+</button>
         <button onClick={() => setView((v) => ({ ...v, zoom: Math.max(1, v.zoom / 1.3) }))}>−</button>
         <button onClick={() => setView({ zoom: 1, ox: 0, oy: 0 })}>fit</button>
       </div>
+    </div>
+  );
+}
+
+function Tooltip(p: { x: number; y: number; px: number; py: number; mines: MapMine[]; units: MapUnit[]; wrapW: number }) {
+  const mines = p.mines.filter((m) => m.x === p.x && m.y === p.y);
+  const units = p.units.filter((u) => u.x === p.x && u.y === p.y && (u.title ?? u.label));
+  const left = p.px + 14 + 220 > p.wrapW ? p.px - 14 - 220 : p.px + 14;
+  return (
+    <div className="map-tooltip" style={{ left, top: p.py + 12 }}>
+      <div className="muted">({p.x}, {p.y})</div>
+      {mines.map((m) => (
+        <div key={m.id}>
+          <b className="gold">{m.id}</b> pays <b>{m.payout}</b>/round{m.note ? ` · ${m.note}` : ''}
+        </div>
+      ))}
+      {units.map((u) => (
+        <div key={u.key} style={{ color: u.color }}>
+          {u.title ?? u.label}
+        </div>
+      ))}
     </div>
   );
 }

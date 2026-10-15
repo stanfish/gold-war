@@ -57,3 +57,6 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 60vh) auto; }
 }
+.map-tooltip { position: absolute; pointer-events: none; width: 220px; background: rgba(13,17,23,0.95); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 12px; z-index: 2; }
+.gold { color: #f5c542; }
+.indent { padding-left: 10px; }
