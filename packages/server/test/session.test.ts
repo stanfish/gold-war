@@ -226,6 +226,41 @@ describe('table talk', () => {
   });
 });
 
+describe('table talk with early resolution', () => {
+  it('round does not resolve while an AI is answering a message', async () => {
+    let calls = 0;
+    const talker: AiFactory = (agent, ctx) => ({
+      agent,
+      start: async () => {},
+      decide: async (input) => {
+        calls++;
+        await new Promise((r) => setTimeout(r, 5));
+        return {
+          actions: [],
+          messages: [`${ctx.player} ${input.trigger} ${input.chat.length}`],
+          notes: '',
+          thinking: '',
+        };
+      },
+      cancel: async () => {},
+      stop: async () => {},
+    });
+    const s = new GameSession(
+      { settings: settings({ tableTalk: true, fullRoundTimer: false }), seats: { p1: { type: 'ai', agent: 'claude-opus' }, p2: { type: 'ai', agent: 'claude-sonnet' } }, seed: 1 },
+      { makeAi: talker, logDir: null },
+    );
+    await s.start();
+    for (let i = 0; i < 50 && s.state.round === 1; i++) await new Promise((r) => setTimeout(r, 5));
+    const r1 = s.godUpdate().chat.filter((c) => c.round === 1);
+    // 2 opening messages + up to 2 replies each before the round could resolve.
+    expect(r1.length).toBe(2 + 2 * MAX_AI_REPLIES_PER_ROUND);
+    expect(r1.filter((c) => c.text.includes('message'))).toHaveLength(2 * MAX_AI_REPLIES_PER_ROUND);
+    expect(s.state.round).toBe(2);
+    expect(calls).toBeGreaterThanOrEqual(6);
+    s.stop();
+  });
+});
+
 describe('helpers', () => {
   it('eventsFor hides opponent positional events, keeps all collects and public bookkeeping', () => {
     const ev = [

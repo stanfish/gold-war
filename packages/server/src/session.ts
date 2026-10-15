@@ -226,6 +226,7 @@ export class GameSession {
         // Failure = every worker STAYs; submit now so the round need not wait out the timer.
         this.submit(p, { actions: [] });
       }
+      this.maybeResolveEarly();
       return;
     }
     this.aiBusy.delete(p);
@@ -238,14 +239,30 @@ export class GameSession {
     for (const m of resp.messages) this.postChat(p, m);
     this.submit(p, { actions: resp.actions });
     this.maybeAiReply(p);
+    this.maybeResolveEarly();
+  }
+
+  /** Whether an AI could take a chat-reply turn right now (ignoring whether it is busy). */
+  private canReply(p: PlayerId): boolean {
+    const a = this.ai[p];
+    if (!a || a.player.agent === 'bot' || this.phase !== 'playing' || this.deadline === null) return false;
+    return this.aiReplies[p] < MAX_AI_REPLIES_PER_ROUND && this.deadline - Date.now() >= MIN_REPLY_MS;
+  }
+
+  /**
+   * Early resolution (fullRoundTimer off): once both players submitted — but never while an AI is still
+   * mid-turn or has an unanswered message it may reply to, so table talk is not cut off.
+   */
+  private maybeResolveEarly(): void {
+    if (this.phase !== 'playing' || this.state.settings.fullRoundTimer) return;
+    if (!PLAYERS.every((q) => this.submissions[q])) return;
+    const conversing = PLAYERS.some((q) => this.aiBusy.has(q) || (this.aiUnread.has(q) && this.canReply(q)));
+    if (!conversing) this.resolveNow();
   }
 
   /** Give an AI an extra turn to answer opponent messages, if it has any unread and the round allows it. */
   private maybeAiReply(p: PlayerId): void {
-    const a = this.ai[p];
-    if (!a || a.player.agent === 'bot' || !this.aiUnread.has(p)) return;
-    if (this.phase !== 'playing' || this.aiBusy.has(p) || this.deadline === null) return;
-    if (this.aiReplies[p] >= MAX_AI_REPLIES_PER_ROUND || this.deadline - Date.now() < MIN_REPLY_MS) return;
+    if (!this.aiUnread.has(p) || this.aiBusy.has(p) || !this.canReply(p)) return;
     this.aiReplies[p]++;
     void this.runAi(p, this.roundToken, 'message');
   }
@@ -278,8 +295,8 @@ export class GameSession {
     if (!Array.isArray(sub.actions)) return 'actions must be an array';
     this.submissions[p] = { actions: sub.actions as SubmittedAction[] };
     // With fullRoundTimer the round always runs to the deadline; players may resubmit until then.
-    if (!this.state.settings.fullRoundTimer && PLAYERS.every((q) => this.submissions[q])) this.resolveNow();
-    else this.emit();
+    this.emit();
+    this.maybeResolveEarly();
     return null;
   }
 

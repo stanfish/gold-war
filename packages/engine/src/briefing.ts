@@ -19,7 +19,7 @@ files, panes, processes or network resources: you only know what the state file 
 - Rounds: ${s.roundsTotal}. Round timer: ${s.roundSeconds}s${s.fullRoundTimer ? ' (every round lasts the full timer)' : ' (a round ends early once both players submitted)'}.
 - Move range: 1-${s.moveRange} squares per MOVE.
 - Start: ${s.startWorkers} workers and ${s.startGold} gold each.
-- Table talk: ${s.tableTalk ? 'ON — real-time chat. Messages you put in "messages" (<=200 chars each, up to 10 per round) reach the opponent immediately. When the opponent writes to you during a round you get an extra turn (trigger "message", at most 2 per round) to reply and optionally revise your orders. Pure talk: no game effect. Bluffing is allowed.' : 'OFF — messages are ignored.'}
+- Table talk: ${s.tableTalk ? 'ON — real-time chat. Messages you put in "messages" (<=200 chars each, up to 10 per round) reach the opponent immediately. When the opponent writes to you during a round you get an extra turn (trigger "message", at most 2 per round) to reply and optionally revise your orders. Pure talk: no game effect, but it is a real part of the game: use it to negotiate (split regions or mines, truces), probe, threaten or bluff, and answer when spoken to.' : 'OFF — messages are ignored.'}
 
 ## Rules
 Each round both players act simultaneously. Every worker gets exactly 1 action:
