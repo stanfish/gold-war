@@ -42,16 +42,16 @@ interface RoundRecord {
 }
 
 /**
- * Events of a resolved round that `player` is entitled to see: all their own events, contests they joined,
- * the end, and the opponent's public bookkeeping (gold paid/earned, deletes). Opponent moves, collects and
- * discoveries stay hidden: they would reveal positions behind the fog.
+ * Events of a resolved round that `player` is entitled to see: all their own events, every collect (mine
+ * name, payout and worker counts only — never coordinates), the end, and the opponent's public bookkeeping
+ * (gold paid/earned, deletes). Opponent moves and discoveries stay hidden: they would reveal positions.
  */
 const OPPONENT_PUBLIC = new Set<RoundEvent['type']>(['cost', 'income', 'delete']);
 
 export function eventsFor(events: RoundEvent[], player: PlayerId): RoundEvent[] {
   return events.filter((e) => {
     if (e.type === 'end') return true;
-    if (e.type === 'collect') return e.workers[player] > 0;
+    if (e.type === 'collect') return true;
     return e.player === player || OPPONENT_PUBLIC.has(e.type);
   });
 }

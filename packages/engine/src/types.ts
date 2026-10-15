@@ -106,6 +106,6 @@ export type RoundEvent =
   | { type: 'delete'; player: PlayerId; workerId: string }
   | { type: 'discover'; player: PlayerId; mineId: string }
   | { type: 'cost'; player: PlayerId; amount: number }
-  /** Total payout a player received this round (no mine ids: safe to show the opponent). */
+  /** Total payout a player received this round. */
   | { type: 'income'; player: PlayerId; amount: number }
   | { type: 'end'; result: GameResult };

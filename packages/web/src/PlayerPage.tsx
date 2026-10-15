@@ -271,7 +271,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
 
           <section>
             <h3>Last round</h3>
-            <LastRound events={msg.lastEvents} seat={seat} />
+            <LastRound events={msg.lastEvents} seat={seat} known={new Set(view.known_mines.map((m) => m.id))} />
           </section>
 
           {view.settings.table_talk && (
@@ -318,8 +318,8 @@ function MoveControls(props: {
   );
 }
 
-/** Last round, split into you / opponent / contests. Opponent side only has fog-safe totals. */
-function LastRound({ events, seat }: { events: RoundEvent[]; seat: PlayerId }) {
+/** Last round, split into you / opponent / all collects (mine names only, never locations). */
+function LastRound({ events, seat, known }: { events: RoundEvent[]; seat: PlayerId; known: Set<string> }) {
   if (!events.length) return <div className="muted small">Nothing yet.</div>;
   const opp: PlayerId = seat === 'p1' ? 'p2' : 'p1';
   const sum = (p: PlayerId, type: 'cost' | 'income') =>
@@ -350,10 +350,11 @@ function LastRound({ events, seat }: { events: RoundEvent[]; seat: PlayerId }) {
         <b>Opponent</b>: paid {theirs.paid}, earned {theirs.earned} → <b>{theirs.net}</b>
         {oppDeleted > 0 && `, deleted ${oppDeleted} worker${oppDeleted > 1 ? 's' : ''}`}
       </div>
-      {contests.length > 0 && <div style={{ marginTop: 6 }} className="muted">Your collects</div>}
+      {contests.length > 0 && <div style={{ marginTop: 6 }} className="muted">Collects</div>}
       {contests.map((e, i) => (
         <div key={i} className="indent">
           {describeEvent(e, seat)}
+          {e.type === 'collect' && !known.has(e.mineId) && <span className="muted"> · location unknown</span>}
         </div>
       ))}
       {end && <div style={{ marginTop: 6 }}>{describeEvent(end, seat)}</div>}

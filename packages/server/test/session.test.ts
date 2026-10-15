@@ -146,7 +146,7 @@ describe('GameSession', () => {
 });
 
 describe('helpers', () => {
-  it('eventsFor hides opponent positional events, keeps contests and public bookkeeping', () => {
+  it('eventsFor hides opponent positional events, keeps all collects and public bookkeeping', () => {
     const ev = [
       { type: 'move', player: 'p2' as PlayerId, workerId: 'w1', from: { x: 0, y: 0 }, to: { x: 1, y: 0 } },
       { type: 'discover', player: 'p2' as PlayerId, mineId: 'm9' },
@@ -156,7 +156,7 @@ describe('helpers', () => {
       { type: 'collect', mineId: 'm1', payout: 3, workers: { p1: 1, p2: 1 }, gained: { p1: 1.5, p2: 1.5 } },
       { type: 'collect', mineId: 'm2', payout: 3, workers: { p1: 0, p2: 1 }, gained: { p1: 0, p2: 3 } },
     ] as const;
-    expect(eventsFor([...ev], 'p1').map((e) => e.type)).toEqual(['cost', 'income', 'delete', 'collect']);
+    expect(eventsFor([...ev], 'p1').map((e) => e.type)).toEqual(['cost', 'income', 'delete', 'collect', 'collect']);
   });
 
   it('sanitizeMessages respects table talk toggle and limits', () => {
