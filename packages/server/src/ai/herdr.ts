@@ -122,7 +122,11 @@ const tables = new Map<string, Promise<Table>>();
 function claimPane(gameId: string, cwd: string): Promise<{ workspaceId: string; paneId: string }> {
   const prev =
     tables.get(gameId) ??
-    herdr(['workspace', 'create', '--cwd', tmpdir(), '--label', `gold-war ${gameId.slice(0, 8)}`, '--no-focus']).then((ws) => {
+    // Focus the game's workspace so the agents can be watched side by side (GOLDWAR_HERDR_FOCUS=0 disables).
+    herdr([
+      'workspace', 'create', '--cwd', tmpdir(), '--label', `gold-war ${gameId.slice(0, 8)}`,
+      process.env.GOLDWAR_HERDR_FOCUS === '0' ? '--no-focus' : '--focus',
+    ]).then((ws) => {
       const workspaceId = pick(ws, 'result.workspace.workspace_id', 'result.workspace.id');
       const root = pick(ws, 'result.root_pane.pane_id', 'result.root_pane.id');
       if (!workspaceId || !root) throw new Error(`herdr workspace create returned no pane: ${JSON.stringify(ws).slice(0, 300)}`);
