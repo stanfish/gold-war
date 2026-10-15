@@ -6,7 +6,7 @@ import type { AiPlayer } from '../src/ai/types.js';
 import { GameSession, eventsFor, sanitizeMessages, type AiFactory } from '../src/session.js';
 
 const bots: AiFactory = (_agent, ctx) => new BotPlayer(ctx);
-const settings = (over = {}) => ({ ...defaultSettings(30), roundSeconds: 60, ...over });
+const settings = (over = {}) => ({ ...defaultSettings(30), roundSeconds: 60, fullRoundTimer: false, ...over });
 
 async function flush() {
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
@@ -70,6 +70,30 @@ describe('GameSession', () => {
       expect(s.state.round).toBe(2);
       expect(s.state.players.p1.workers).toHaveLength(5);
       expect(s.state.players.p1.gold2).toBe(35);
+      s.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('fullRoundTimer: both submitted still waits for the deadline, resubmits allowed', async () => {
+    vi.useFakeTimers();
+    try {
+      const s = new GameSession(
+        { settings: settings({ roundSeconds: 120, fullRoundTimer: true }), seats: { p1: { type: 'human' }, p2: { type: 'human' } }, seed: 1 },
+        { makeAi: bots, logDir: null },
+      );
+      await s.start();
+      s.humanConnected('p1');
+      s.humanConnected('p2');
+      s.submit('p1', { actions: [{ worker_id: 'w1', action: 'MOVE', dx: 1, dy: 0 }] });
+      s.submit('p2', { actions: [] });
+      vi.advanceTimersByTime(60_000);
+      expect(s.state.round).toBe(1);
+      expect(s.submit('p1', { actions: [{ worker_id: 'w1', action: 'MOVE', dx: 2, dy: 0 }] })).toBeNull();
+      vi.advanceTimersByTime(60_001);
+      expect(s.state.round).toBe(2);
+      expect(s.state.players.p1.workers[0]!.x).toBe(17); // the resubmitted order won
       s.stop();
     } finally {
       vi.useRealTimers();

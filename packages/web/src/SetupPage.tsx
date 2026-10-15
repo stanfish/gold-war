@@ -96,7 +96,7 @@ export function SetupPage() {
             value={settings.mapSize}
             onChange={(e) => {
               const size = Number(e.target.value);
-              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk });
+              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer });
             }}
           >
             <option value={30}>30×30 (quick)</option>
@@ -128,6 +128,11 @@ export function SetupPage() {
         <label className="row">
           <input type="checkbox" checked={settings.tableTalk} onChange={(e) => set({ tableTalk: e.target.checked })} /> Table talk
         </label>
+        <label className="row">
+          <input type="checkbox" checked={settings.fullRoundTimer} onChange={(e) => set({ fullRoundTimer: e.target.checked })} /> Rounds
+          always last the full timer
+        </label>
+        {!settings.fullRoundTimer && <p className="muted small">A round ends as soon as both players have submitted.</p>}
         <p className="muted small">
           {settings.roundsTotal} rounds · {settings.startWorkers} workers · {settings.startGold} gold each · mine payout {settings.payoutMin}–
           {settings.payoutMax}

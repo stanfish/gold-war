@@ -23,6 +23,7 @@ export function defaultSettings(mapSize = 30): Settings {
     moveRange: d.moveRange,
     roundSeconds: 120,
     tableTalk: false,
+    fullRoundTimer: true,
     roundsTotal: 30,
     payoutMin: 2,
     payoutMax: 5,

@@ -16,7 +16,7 @@ files, panes, processes or network resources: you only know what the state file 
 - Map: ${s.mapSize}x${s.mapSize} squares. Coordinates (x, y), (0,0) = top-left, x grows right, y grows down, valid 0..${s.mapSize - 1}.
 - Base: (${base}, ${base}), shared by both players. All workers start there.
 - Gold mines: ${s.mineCount} total, hidden until seen. Each pays a fixed ${s.payoutMin}-${s.payoutMax} gold per round.
-- Rounds: ${s.roundsTotal}. Round timer: ${s.roundSeconds}s.
+- Rounds: ${s.roundsTotal}. Round timer: ${s.roundSeconds}s${s.fullRoundTimer ? ' (every round lasts the full timer)' : ' (a round ends early once both players submitted)'}.
 - Move range: 1-${s.moveRange} squares per MOVE.
 - Start: ${s.startWorkers} workers and ${s.startGold} gold each.
 - Table talk: ${s.tableTalk ? 'ON — you may send up to 3 short messages (<=200 chars) per round; the opponent sees them after the round resolves. Bluffing is allowed.' : 'OFF — messages are ignored.'}

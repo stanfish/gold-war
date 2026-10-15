@@ -222,7 +222,8 @@ export class GameSession {
       actions: sub.actions as SubmittedAction[],
       messages: sanitizeMessages(sub.messages, this.state.settings.tableTalk),
     };
-    if (PLAYERS.every((q) => this.submissions[q])) this.resolveNow();
+    // With fullRoundTimer the round always runs to the deadline; players may resubmit until then.
+    if (!this.state.settings.fullRoundTimer && PLAYERS.every((q) => this.submissions[q])) this.resolveNow();
     else this.emit();
     return null;
   }
@@ -258,7 +259,7 @@ export class GameSession {
       return;
     }
     const pace = this.opts.aiPaceMs ?? 0;
-    if (pace > 0 && PLAYERS.every((p) => this.seats[p].type === 'ai')) {
+    if (pace > 0 && !this.state.settings.fullRoundTimer && PLAYERS.every((p) => this.seats[p].type === 'ai')) {
       this.phaseDetail = 'next round starting';
       this.emit();
       const token = this.roundToken;

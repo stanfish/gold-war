@@ -17,7 +17,7 @@ import { inBounds, seenBy, visibleCells } from './vision.js';
  * Bump whenever action validation or resolution rules change. Clients compare it with the server's
  * so a stale server never silently rejects moves the UI allowed.
  */
-export const RULES_VERSION = 2;
+export const RULES_VERSION = 3;
 
 /**
  * Why a MOVE by (dx, dy) is illegal, or null if it is legal. Shared by the engine and the player UI.

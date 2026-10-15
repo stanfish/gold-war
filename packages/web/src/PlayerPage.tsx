@@ -249,7 +249,11 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
             >
               {msg.mySubmission ? 'Resubmit orders' : 'Submit orders'}
             </button>
-            {msg.mySubmission && <p className="muted small">Submitted — you can change orders until both players are in.</p>}
+            {msg.mySubmission && (
+              <p className="muted small">
+                Submitted — you can change orders {view.settings.full_round_timer ? 'until the timer runs out' : 'until both players are in'}.
+              </p>
+            )}
             <p className="muted small">Select a worker, then click a highlighted square to MOVE (or use the step buttons). Wheel/drag to zoom/pan.</p>
           </section>
 

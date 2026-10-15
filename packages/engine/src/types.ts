@@ -11,6 +11,8 @@ export interface Settings {
   moveRange: number;
   roundSeconds: number;
   tableTalk: boolean;
+  /** true: every round lasts the full timer even when both players submitted early. */
+  fullRoundTimer: boolean;
   roundsTotal: number;
   payoutMin: number;
   payoutMax: number;
