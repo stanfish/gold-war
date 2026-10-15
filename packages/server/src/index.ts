@@ -59,6 +59,11 @@ app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
   if (errs.length) return reply.code(400).send({ error: errs.join('; ') });
 
   if (session) await session.stop();
+  // Attach display names (e.g. "Claude Opus") so every view can show which model plays which seat.
+  for (const p of PLAYERS) {
+    const seat = body.seats[p];
+    if (seat.type === 'ai') seat.label = seat.agent === 'bot' ? 'bot' : (findPreset(seat.agent)?.label ?? seat.agent);
+  }
   const s = new GameSession(body, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 1500 });
   session = s;
   s.onChange(() => broadcast(s));

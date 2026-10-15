@@ -3,7 +3,8 @@ import type { GameState, PlayerId, RoundEvent, Settings, SubmittedAction } from 
 import type { PlayerView } from './view.js';
 
 /** 'bot' = built-in scripted player; anything else is a herdr agent kind (claude, codex, grok, ...). */
-export type SeatConfig = { type: 'human' } | { type: 'ai'; agent: string };
+/** `label` is the display name (e.g. "Claude Opus"), filled in by the server. */
+export type SeatConfig = { type: 'human' } | { type: 'ai'; agent: string; label?: string };
 
 /** One entry of the setup screen's AI dropdown. */
 export interface AgentOption {

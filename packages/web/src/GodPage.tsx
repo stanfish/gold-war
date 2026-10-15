@@ -55,7 +55,10 @@ export function GodPage({ k }: { k: string | null }) {
 
       {state.result && (
         <div className="banner">
-          {state.result.winner ? `${state.result.winner.toUpperCase()} wins` : 'Draw'} — {state.result.reason}
+          {state.result.winner
+            ? `🏆 ${seatLabel(state.result.winner, msg.seats[state.result.winner])} wins`
+            : `Draw: ${seatLabel('p1', msg.seats.p1)} vs ${seatLabel('p2', msg.seats.p2)}`}{' '}
+          — {state.result.reason}
         </div>
       )}
       {msg.phase === 'error' && <div className="banner danger">{msg.phaseDetail}</div>}
@@ -72,7 +75,7 @@ export function GodPage({ k }: { k: string | null }) {
             return (
               <section key={p}>
                 <h3 style={{ color: PLAYER_COLORS[p] }}>
-                  {p.toUpperCase()} AI · {ai.agent} <span className="muted small">({ai.status})</span>
+                  {seatLabel(p, msg.seats[p])} <span className="muted small">({ai.status})</span>
                 </h3>
                 {ai.lastError && <p className="danger small">{ai.lastError}</p>}
                 <h4>Notes</h4>

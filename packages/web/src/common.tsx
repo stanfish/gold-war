@@ -63,7 +63,7 @@ export function Countdown({ deadline }: { deadline: number | null }) {
 }
 
 export function seatLabel(p: PlayerId, seat: SeatConfig): string {
-  return `${p.toUpperCase()} · ${seat.type === 'human' ? 'human' : seat.agent}`;
+  return `${p.toUpperCase()} · ${seat.type === 'human' ? 'human' : (seat.label ?? seat.agent)}`;
 }
 
 export function ChatLog({ chat, me }: { chat: ChatEntry[]; me?: PlayerId }) {
