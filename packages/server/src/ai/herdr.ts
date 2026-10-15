@@ -177,11 +177,22 @@ export class HerdrAgentPlayer implements AiPlayer {
     const { paneId: pane } = await claimPane(this.ctx.gameId, this.workdir);
     await herdr(['pane', 'rename', pane, `${this.ctx.player} · ${this.preset.label}`]).catch(() => {});
 
-    try {
-      await herdr(['agent', 'start', this.name, '--kind', this.preset.kind, '--pane', pane, '--timeout', '120000', '--', ...this.preset.extraArgs, ...agentArgs(this.preset.kind)], 130_000);
-    } catch (e) {
-      // Blocked during startup: usually the "trust this folder?" dialog for the fresh workdir.
-      if (!/agent_not_ready|blocked/.test((e as Error).message)) throw e;
+    const startArgs = ['agent', 'start', this.name, '--kind', this.preset.kind, '--pane', pane, '--timeout', '120000', '--', ...this.preset.extraArgs, ...agentArgs(this.preset.kind)];
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await herdr(startArgs, 130_000);
+        break;
+      } catch (e) {
+        const msg = (e as Error).message;
+        // Fresh pane whose shell is still loading its rc files: wait and retry (up to ~30s).
+        if (/agent_pane_busy/.test(msg) && attempt < 30) {
+          await new Promise((r) => setTimeout(r, 1000));
+          continue;
+        }
+        // Blocked during startup: usually the "trust this folder?" dialog for the fresh workdir.
+        if (/agent_not_ready|blocked/.test(msg)) break;
+        throw e;
+      }
     }
     await this.passStartupDialogs();
     await this.prompt(

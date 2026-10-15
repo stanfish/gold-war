@@ -141,6 +141,8 @@ export class GameSession {
       this.phase = 'error';
       this.phaseDetail = (e as Error).message;
       this.emit();
+      // Don't leave the other agent (or its panes) running for a game that cannot start.
+      await Promise.allSettled(PLAYERS.map((p) => this.ai[p]?.player.stop()));
       return;
     }
     this.phase = 'waiting';
