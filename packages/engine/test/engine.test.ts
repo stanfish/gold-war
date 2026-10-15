@@ -338,6 +338,19 @@ describe('purity & briefing', () => {
     expect(a).toEqual(b);
   });
 
+  it('custom payout range is respected and validated', () => {
+    const s = { ...defaultSettings(30), mineCount: 40, payoutMin: 7, payoutMax: 9 };
+    for (const m of createGame(s, 5).mines) expect(m.payout >= 7 && m.payout <= 9).toBe(true);
+    expect(() => createGame({ ...s, payoutMin: 10, payoutMax: 9 }, 1)).toThrow(/payout/);
+    expect(buildPlayerBriefing(s, 'p1')).toContain('7-9 gold per round');
+  });
+
+  it('briefing states the goal is to win and talk may be lies', () => {
+    const b = buildPlayerBriefing(defaultSettings(30), 'p2');
+    expect(b).toMatch(/## Your goal\nWin\./);
+    expect(b).toMatch(/may be a lie/);
+  });
+
   it('briefings are identical except identity and contain no mine positions', () => {
     const s = defaultSettings(30);
     const b1 = buildPlayerBriefing(s, 'p1');

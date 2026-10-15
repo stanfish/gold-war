@@ -66,3 +66,6 @@ table.mines td { padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.0
 .summary { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
 .chat-input { display: flex; gap: 6px; margin-top: 8px; }
 .chat-input input { flex: 1; min-width: 0; }
+.form .field { display: flex; flex-direction: column; gap: 4px; }
+.range-pair { display: flex; gap: 16px; }
+.range-pair input { width: 80px; }

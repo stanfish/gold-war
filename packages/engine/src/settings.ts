@@ -42,8 +42,8 @@ export function validateSettings(s: Settings): string[] {
   if (!int(s.moveRange) || s.moveRange < 1 || s.moveRange >= s.mapSize) errs.push('moveRange must be 1..mapSize-1');
   if (!int(s.roundSeconds) || s.roundSeconds < 5) errs.push('roundSeconds must be >= 5');
   if (!int(s.roundsTotal) || s.roundsTotal < 1) errs.push('roundsTotal must be >= 1');
-  if (!int(s.payoutMin) || !int(s.payoutMax) || s.payoutMin < 1 || s.payoutMax < s.payoutMin)
-    errs.push('payout range invalid');
+  if (!int(s.payoutMin) || !int(s.payoutMax) || s.payoutMin < 1 || s.payoutMax < s.payoutMin || s.payoutMax > 100)
+    errs.push('payout range must be integers with 1 <= min <= max <= 100');
   if (!int(s.startWorkers) || s.startWorkers < 1) errs.push('startWorkers must be >= 1');
   if (!(s.startGold > 0) || !int(s.startGold * 2)) errs.push('startGold must be > 0 in 0.5 steps');
   return errs;

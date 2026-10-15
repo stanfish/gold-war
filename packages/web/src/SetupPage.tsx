@@ -35,6 +35,7 @@ export function SetupPage() {
         ? { p1: { type: 'human' }, p2: { type: 'ai', agent: agents.p2 } }
         : { p1: { type: 'ai', agent: agents.p1 }, p2: { type: 'ai', agent: agents.p2 } };
 
+  const payoutInvalid = settings.payoutMin > settings.payoutMax;
   const usesHerdr = Object.values(seats).some((s) => s.type === 'ai' && s.agent !== 'bot');
 
   const create = async () => {
@@ -99,7 +100,7 @@ export function SetupPage() {
             value={settings.mapSize}
             onChange={(e) => {
               const size = Number(e.target.value);
-              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer });
+              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer, payoutMin: settings.payoutMin, payoutMax: settings.payoutMax });
             }}
           >
             <option value={30}>30×30 (quick)</option>
@@ -120,6 +121,36 @@ export function SetupPage() {
           Move range: <b>{settings.moveRange}</b>
           <input type="range" min={1} max={Math.floor(settings.mapSize / 3)} value={settings.moveRange} onChange={(e) => set({ moveRange: Number(e.target.value) })} />
         </label>
+        <div className="field">
+          Gold mine payout (gold per round, random per mine)
+          <div className="range-pair">
+            <label className="row">
+              min
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={settings.payoutMin}
+                onChange={(e) => {
+                  set({ payoutMin: Math.max(1, Math.min(100, Math.round(Number(e.target.value) || 1))) });
+                }}
+              />
+            </label>
+            <label className="row">
+              max
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={settings.payoutMax}
+                onChange={(e) => {
+                  set({ payoutMax: Math.max(1, Math.min(100, Math.round(Number(e.target.value) || 1))) });
+                }}
+              />
+            </label>
+          </div>
+          {payoutInvalid && <span className="danger small">min must not be greater than max</span>}
+        </div>
         <label>
           Round timer
           <select value={settings.roundSeconds} onChange={(e) => set({ roundSeconds: Number(e.target.value) })}>
@@ -144,7 +175,7 @@ export function SetupPage() {
         {usesHerdr && meta && !meta.herdrAvailable && (
           <p className="danger small">herdr server not reachable — CLI agents cannot be launched. Start herdr (run `herdr` in a terminal), or pick “bot”.</p>
         )}
-        <button className="primary" disabled={busy} onClick={create}>
+        <button className="primary" disabled={busy || payoutInvalid} onClick={create}>
           {busy ? 'Creating…' : 'Start game'}
         </button>
         {error && <p className="danger">{error}</p>}
