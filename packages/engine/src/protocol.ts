@@ -37,6 +37,8 @@ export interface CreateGameResponse {
 
 interface UpdateBase {
   gameId: string;
+  /** Server's RULES_VERSION; the UI refuses to submit when it differs from its own. */
+  rulesVersion: number;
   phase: Phase;
   phaseDetail: string | null;
   /** Epoch ms when the current round's timer runs out; null when no round is open. */

@@ -13,6 +13,25 @@ import {
 } from './types.js';
 import { inBounds, seenBy, visibleCells } from './vision.js';
 
+/**
+ * Bump whenever action validation or resolution rules change. Clients compare it with the server's
+ * so a stale server never silently rejects moves the UI allowed.
+ */
+export const RULES_VERSION = 2;
+
+/**
+ * Why a MOVE by (dx, dy) is illegal, or null if it is legal. Shared by the engine and the player UI.
+ * Steps are orthogonal but may combine directions: any destination within Manhattan distance moveRange.
+ */
+export function moveError(worker: { x: number; y: number }, dx: number, dy: number, mapSize: number, moveRange: number): string | null {
+  if (!Number.isInteger(dx) || !Number.isInteger(dy)) return 'MOVE offsets must be integers';
+  if (dx === 0 && dy === 0) return 'MOVE must go somewhere';
+  const dist = Math.abs(dx) + Math.abs(dy);
+  if (dist > moveRange) return `MOVE distance ${dist} exceeds range ${moveRange}`;
+  if (!inBounds(mapSize, worker.x + dx, worker.y + dy)) return 'MOVE leaves the map';
+  return null;
+}
+
 /** Cost of each action in half-gold units. */
 export const COST2: Record<ActionType, number> = { MOVE: 2, COLLECT: 2, STAY: 1, DELETE: 0 };
 
@@ -44,13 +63,7 @@ export function validateAction(state: GameState, player: PlayerId, worker: Worke
       } else {
         return 'MOVE needs dx/dy or x/y';
       }
-      if (!Number.isInteger(dx) || !Number.isInteger(dy)) return 'MOVE offsets must be integers';
-      // Steps are orthogonal, but may combine directions: any destination within Manhattan distance N.
-      if (dx === 0 && dy === 0) return 'MOVE must go somewhere';
-      const dist = Math.abs(dx) + Math.abs(dy);
-      if (dist > state.settings.moveRange) return `MOVE distance ${dist} exceeds range ${state.settings.moveRange}`;
-      if (!inBounds(n, worker.x + dx, worker.y + dy)) return 'MOVE leaves the map';
-      return { type: 'MOVE', dx, dy };
+      return moveError(worker, dx, dy, n, state.settings.moveRange) ?? { type: 'MOVE', dx, dy };
     }
     case 'COLLECT': {
       const id = a.mine_id;

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { visibleCells, type PlayerId, type SeatUpdate, type SubmittedAction } from '@gold-war/engine';
+import { RULES_VERSION, moveError, visibleCells, type PlayerId, type SeatUpdate, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
 import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
 import type { RoundEvent } from '@gold-war/engine';
@@ -40,14 +40,11 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const moveTargets = useMemo(() => {
     const out = new Set<number>();
     if (!selWorker || !view) return out;
-    // Any square within Manhattan distance move_range (steps may mix directions).
+    // Exactly the squares the engine accepts (same moveError the server uses).
     const r = view.settings.move_range;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        const dist = Math.abs(dx) + Math.abs(dy);
-        const x = selWorker.x + dx;
-        const y = selWorker.y + dy;
-        if (dist >= 1 && dist <= r && x >= 0 && y >= 0 && x < n && y < n) out.add(y * n + x);
+        if (moveError(selWorker, dx, dy, n, r) === null) out.add((selWorker.y + dy) * n + selWorker.x + dx);
       }
     }
     return out;
@@ -64,13 +61,20 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const playing = msg.phase === 'playing' && view.status === 'active' && msg.deadline !== null;
   const total = view.workers.reduce((s, w) => s + COST[drafts[w.id]?.action ?? 'STAY'], 0);
   const affordable = total <= view.gold;
-  // A MOVE picked in the dropdown but without a direction yet is pending (dx = dy = 0).
-  const pendingMoves = view.workers.filter((w) => {
-    const d = drafts[w.id];
-    return d?.action === 'MOVE' && d.dx === 0 && d.dy === 0;
-  });
   const range = view.settings.move_range;
   const collectable = view.known_mines.filter((m) => m.collectable);
+  // Validate every order with the engine's own rules; invalid orders block submission.
+  const orderError = (w: { x: number; y: number }, d: Draft | undefined): string | null => {
+    if (d?.action === 'MOVE') {
+      if (d.dx === 0 && d.dy === 0) return 'add at least one step (or click a highlighted square)';
+      return moveError(w, d.dx, d.dy, n, range);
+    }
+    if (d?.action === 'COLLECT' && !collectable.some((m) => m.id === d.mine_id)) return `${d.mine_id} is not collectable`;
+    return null;
+  };
+  const invalidOrders = view.workers.filter((w) => orderError(w, drafts[w.id]) !== null);
+  // Page and server built from different rules: submitting could silently turn orders into STAY.
+  const staleServer = msg.rulesVersion !== RULES_VERSION;
   const opp: PlayerId = seat === 'p1' ? 'p2' : 'p1';
   const setDraft = (id: string, d: Draft) => setDrafts((all) => ({ ...all, [id]: d }));
 
@@ -197,11 +201,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
                     <MoveControls
                       draft={d}
                       disabled={!playing}
-                      canGo={(dx, dy) => {
-                        const x = w.x + dx;
-                        const y = w.y + dy;
-                        return Math.abs(dx) + Math.abs(dy) <= range && x >= 0 && y >= 0 && x < n && y < n;
-                      }}
+                      canGo={(dx, dy) => (dx === 0 && dy === 0) || moveError(w, dx, dy, n, range) === null}
                       range={range}
                       onChange={(dx, dy) => setDraft(w.id, { action: 'MOVE', dx, dy })}
                     />
@@ -231,12 +231,22 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
                 ))}
               </div>
             )}
-            {pendingMoves.length > 0 && (
+            {invalidOrders.map((w) => (
+              <p key={w.id} className="danger small">
+                {w.id}: {orderError(w, drafts[w.id])}
+              </p>
+            ))}
+            {staleServer && (
               <p className="danger small">
-                Add at least one step for {pendingMoves.map((w) => w.id).join(', ')} (or click a highlighted square).
+                Server runs different rules than this page (v{msg.rulesVersion ?? '?'} vs v{RULES_VERSION}). Restart the server and
+                start a new game.
               </p>
             )}
-            <button className="primary" disabled={!playing || !affordable || pendingMoves.length > 0} onClick={submit}>
+            <button
+              className="primary"
+              disabled={!playing || !affordable || invalidOrders.length > 0 || staleServer}
+              onClick={submit}
+            >
               {msg.mySubmission ? 'Resubmit orders' : 'Submit orders'}
             </button>
             {msg.mySubmission && <p className="muted small">Submitted — you can change orders until both players are in.</p>}

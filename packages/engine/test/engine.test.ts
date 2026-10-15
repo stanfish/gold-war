@@ -4,6 +4,7 @@ import {
   buildPlayerBriefing,
   createGame,
   defaultSettings,
+  moveError,
   playerView,
   resolveRound,
   type GameState,
@@ -91,6 +92,14 @@ describe('costs and moves', () => {
     });
     expect(state.players.p1.workers[0]).toMatchObject({ x: 17, y: 13 });
     expect(state.players.p1.workers[1]).toMatchObject({ x: 14, y: 18 });
+  });
+
+  it('moveError (shared with UI) matches engine rules', () => {
+    const w = { x: 1, y: 15 };
+    expect(moveError(w, 2, -2, 30, 4)).toBeNull();
+    expect(moveError(w, 0, 0, 30, 4)).toMatch(/somewhere/);
+    expect(moveError(w, 3, 2, 30, 4)).toMatch(/exceeds/);
+    expect(moveError(w, -2, 0, 30, 4)).toMatch(/leaves/);
   });
 
   it('accepts MOVE by target x/y', () => {

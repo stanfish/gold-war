@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   PLAYERS,
+  RULES_VERSION,
   aiState,
   buildPlayerBriefing,
   createGame,
@@ -272,6 +273,7 @@ export class GameSession {
   private base() {
     return {
       gameId: this.id,
+      rulesVersion: RULES_VERSION,
       phase: this.phase,
       phaseDetail: this.phaseDetail,
       deadline: this.deadline,
