@@ -9,6 +9,8 @@ interface Meta {
 
 type Mode = 'pvp' | 'pva' | 'ava';
 
+const ROUND_COUNTS = [10, 20, 30, 40, 50];
+
 export function SetupPage() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [mode, setMode] = useState<Mode>('pva');
@@ -100,7 +102,7 @@ export function SetupPage() {
             value={settings.mapSize}
             onChange={(e) => {
               const size = Number(e.target.value);
-              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer, payoutMin: settings.payoutMin, payoutMax: settings.payoutMax });
+              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer, payoutMin: settings.payoutMin, payoutMax: settings.payoutMax, roundsTotal: settings.roundsTotal });
             }}
           >
             <option value={30}>30×30 (quick)</option>
@@ -151,6 +153,16 @@ export function SetupPage() {
           </div>
           {payoutInvalid && <span className="danger small">min must not be greater than max</span>}
         </div>
+        <label>
+          Rounds
+          <select value={settings.roundsTotal} onChange={(e) => set({ roundsTotal: Number(e.target.value) })}>
+            {ROUND_COUNTS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           Round timer
           <select value={settings.roundSeconds} onChange={(e) => set({ roundSeconds: Number(e.target.value) })}>
