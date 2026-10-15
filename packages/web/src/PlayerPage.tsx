@@ -258,20 +258,13 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
           </section>
 
           <section>
-            <h3>Known mines</h3>
-            {view.known_mines.length === 0 && <p className="muted small">None yet. Explore!</p>}
-            <div className="small">
-              {view.known_mines.map((m) => (
-                <div key={m.id}>
-                  {m.id} at ({m.x},{m.y}) pays <b>{m.payout}</b> {m.collectable ? '' : <span className="muted">(next round)</span>}
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <h3>Last round</h3>
-            <LastRound events={msg.lastEvents} seat={seat} known={new Set(view.known_mines.map((m) => m.id))} />
+            <h3>Mines &amp; payouts</h3>
+            <MinesPayout
+              events={msg.lastEvents}
+              seat={seat}
+              mines={view.known_mines}
+              lastRound={view.status === 'finished' ? view.round : view.round - 1}
+            />
           </section>
 
           {view.settings.table_talk && (
@@ -318,44 +311,106 @@ function MoveControls(props: {
   );
 }
 
-/** Last round, split into you / opponent / all collects (mine names only, never locations). */
-function LastRound({ events, seat, known }: { events: RoundEvent[]; seat: PlayerId; known: Set<string> }) {
-  if (!events.length) return <div className="muted small">Nothing yet.</div>;
+/**
+ * Known mines + last round's collects in one table, with paid/earned summaries on top.
+ * Opponent info is fog-safe: totals, deletes and collects by mine name (never coordinates).
+ */
+function MinesPayout({
+  events,
+  seat,
+  mines,
+  lastRound,
+}: {
+  events: RoundEvent[];
+  seat: PlayerId;
+  mines: SeatUpdate['view']['known_mines'];
+  lastRound: number;
+}) {
   const opp: PlayerId = seat === 'p1' ? 'p2' : 'p1';
   const sum = (p: PlayerId, type: 'cost' | 'income') =>
     events.reduce((s, e) => s + (e.type === type && e.player === p ? e.amount : 0), 0);
-  const side = (p: PlayerId) => {
+  const summary = (p: PlayerId) => {
     const paid = sum(p, 'cost');
     const earned = sum(p, 'income');
     const net = earned - paid;
-    return { paid, earned, net: `${net >= 0 ? '+' : ''}${net}` };
+    return `paid ${paid}, earned ${earned} → ${net >= 0 ? '+' : ''}${net}`;
   };
-  const mine = side(seat);
-  const theirs = side(opp);
-  const ownDetail = events.filter((e) => 'player' in e && e.player === seat && !['cost', 'income', 'move'].includes(e.type));
+  const collects = new Map<string, Extract<RoundEvent, { type: 'collect' }>>();
+  for (const e of events) if (e.type === 'collect') collects.set(e.mineId, e);
+  const known = new Map(mines.map((m) => [m.id, m]));
+
+  const ids = [...new Set([...known.keys(), ...collects.keys()])];
+  const payoutOf = (id: string) => known.get(id)?.payout ?? collects.get(id)?.payout ?? 0;
+  // Known mines first (best payout first), then mines only seen through last round's collects.
+  ids.sort((a, b) => Number(known.has(b)) - Number(known.has(a)) || payoutOf(b) - payoutOf(a) || a.localeCompare(b, undefined, { numeric: true }));
+
+  const ownNotices = events.filter((e) => 'player' in e && e.player === seat && !['cost', 'income', 'move'].includes(e.type));
   const oppDeleted = events.filter((e) => e.type === 'delete' && e.player === opp).length;
-  const contests = events.filter((e) => e.type === 'collect');
   const end = events.find((e) => e.type === 'end');
+  const hasLast = events.length > 0;
+  const cell = (c: Extract<RoundEvent, { type: 'collect' }> | undefined, p: PlayerId) =>
+    c && c.workers[p] > 0 ? (
+      <>
+        <b className={c.gained[p] > 0 ? 'gold' : ''}>+{c.gained[p]}</b> <span className="muted">({c.workers[p]}w)</span>
+      </>
+    ) : (
+      <span className="muted">—</span>
+    );
+
   return (
-    <div className="events small">
-      <div style={{ color: PLAYER_COLORS[seat] }}>
-        <b>You</b>: paid {mine.paid}, earned {mine.earned} → <b>{mine.net}</b>
-      </div>
-      {ownDetail.map((e, i) => (
-        <div key={i} className="indent">
-          {describeEvent(e, seat)}
+    <div className="small">
+      {hasLast && (
+        <div className="summary">
+          <div style={{ color: PLAYER_COLORS[seat] }}>
+            <b>You</b> (round {lastRound}): {summary(seat)}
+          </div>
+          <div style={{ color: PLAYER_COLORS[opp] }}>
+            <b>Opponent</b>: {summary(opp)}
+            {oppDeleted > 0 && `, deleted ${oppDeleted} worker${oppDeleted > 1 ? 's' : ''}`}
+          </div>
         </div>
-      ))}
-      <div style={{ color: PLAYER_COLORS[opp], marginTop: 6 }}>
-        <b>Opponent</b>: paid {theirs.paid}, earned {theirs.earned} → <b>{theirs.net}</b>
-        {oppDeleted > 0 && `, deleted ${oppDeleted} worker${oppDeleted > 1 ? 's' : ''}`}
-      </div>
-      {contests.length > 0 && <div style={{ marginTop: 6 }} className="muted">Collects</div>}
-      {contests.map((e, i) => (
-        <div key={i} className="indent">
-          {describeEvent(e, seat)}
-          {e.type === 'collect' && !known.has(e.mineId) && <span className="muted"> · location unknown</span>}
-        </div>
+      )}
+      {ids.length === 0 ? (
+        <p className="muted">No mines known yet. Explore!</p>
+      ) : (
+        <table className="mines">
+          <thead>
+            <tr>
+              <th>Mine</th>
+              <th>Pays</th>
+              <th>Where</th>
+              <th style={{ color: PLAYER_COLORS[seat] }}>You</th>
+              <th style={{ color: PLAYER_COLORS[opp] }}>Opp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ids.map((id) => {
+              const m = known.get(id);
+              const c = collects.get(id);
+              return (
+                <tr key={id}>
+                  <td className="gold">{id}</td>
+                  <td>{payoutOf(id)}</td>
+                  <td>
+                    {m ? (
+                      <>
+                        ({m.x},{m.y}){!m.collectable && <span className="muted"> next rd</span>}
+                      </>
+                    ) : (
+                      <span className="muted">unknown</span>
+                    )}
+                  </td>
+                  <td>{cell(c, seat)}</td>
+                  <td>{cell(c, opp)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+      {hasLast && <p className="muted">You / Opp = gold from that mine last round (workers sent).</p>}
+      {ownNotices.map((e, i) => (
+        <div key={i}>{describeEvent(e, seat)}</div>
       ))}
       {end && <div style={{ marginTop: 6 }}>{describeEvent(end, seat)}</div>}
     </div>
