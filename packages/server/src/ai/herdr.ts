@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseAiResponse, type AiResponse } from './parse.js';
@@ -56,6 +57,13 @@ function herdr(args: string[], timeoutMs = 60_000): Promise<HerdrResult> {
   });
 }
 
+/** True when the herdr CLI can reach a running herdr server. */
+export async function herdrAvailable(): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile('herdr', ['status', 'server'], { timeout: 5000 }, (err, stdout) => resolve(!err && /status:\s*running/.test(stdout)));
+  });
+}
+
 /** Find the first string value at any of the given dotted paths. */
 function pick(obj: unknown, ...paths: string[]): string | undefined {
   for (const p of paths) {
@@ -67,13 +75,53 @@ function pick(obj: unknown, ...paths: string[]): string | undefined {
 }
 
 /**
+ * One herdr workspace per game, with every AI agent in its own pane, side by side (p1 left, p2 right).
+ * Pane claims are chained so they happen in seat order. The workspace's initial root pane is closed after the
+ * first split, so only agent panes remain.
+ */
+interface Table {
+  workspaceId: string;
+  /** Pane the next agent pane splits from. */
+  anchor: string;
+  rootPane: string | null;
+}
+const tables = new Map<string, Promise<Table>>();
+
+function claimPane(gameId: string, cwd: string): Promise<{ workspaceId: string; paneId: string }> {
+  const prev =
+    tables.get(gameId) ??
+    herdr(['workspace', 'create', '--cwd', tmpdir(), '--label', `gold-war ${gameId.slice(0, 8)}`, '--no-focus']).then((ws) => {
+      const workspaceId = pick(ws, 'result.workspace.workspace_id', 'result.workspace.id');
+      const root = pick(ws, 'result.root_pane.pane_id', 'result.root_pane.id');
+      if (!workspaceId || !root) throw new Error(`herdr workspace create returned no pane: ${JSON.stringify(ws).slice(0, 300)}`);
+      return { workspaceId, anchor: root, rootPane: root };
+    });
+  const next = prev.then(async (t) => {
+    const res = await herdr(['pane', 'split', '--pane', t.anchor, '--direction', 'right', '--cwd', cwd, '--no-focus']);
+    const paneId = pick(res, 'result.pane.pane_id', 'result.pane.id');
+    if (!paneId) throw new Error(`herdr pane split returned no pane: ${JSON.stringify(res).slice(0, 300)}`);
+    if (t.rootPane) await herdr(['pane', 'close', t.rootPane]).catch(() => {});
+    return { workspaceId: t.workspaceId, anchor: paneId, rootPane: null, paneId };
+  });
+  tables.set(gameId, next);
+  return next;
+}
+
+async function closeTable(gameId: string): Promise<void> {
+  const t = tables.get(gameId);
+  if (!t) return;
+  tables.delete(gameId);
+  const { workspaceId } = await t.catch(() => ({ workspaceId: '' }));
+  if (workspaceId) await herdr(['workspace', 'close', workspaceId], 10_000).catch(() => {});
+}
+
+/**
  * AI player backed by an interactive CLI agent (claude, codex, grok, ...) running in its own herdr workspace.
  * I/O is file-based: the server writes state-N.json into the agent's private workdir and asks the agent to
  * write response-N.json. The terminal output is never parsed.
  */
 export class HerdrAgentPlayer implements AiPlayer {
   private workdir = '';
-  private workspaceId = '';
   private readonly name: string;
 
   constructor(
@@ -85,20 +133,44 @@ export class HerdrAgentPlayer implements AiPlayer {
 
   async start(briefing: string): Promise<void> {
     // Separate random temp dirs per player: no shared parent the agents could browse.
-    this.workdir = await mkdtemp(join(tmpdir(), 'gw-'));
-    await writeFile(join(this.workdir, 'briefing.md'), briefing);
+    // Sync on purpose: the session starts p1 then p2, so pane claims happen in seat order (p1 left).
+    this.workdir = mkdtempSync(join(tmpdir(), 'gw-'));
+    writeFileSync(join(this.workdir, 'briefing.md'), briefing);
 
-    const ws = await herdr(['workspace', 'create', '--cwd', this.workdir, '--label', `gold-war ${this.ctx.player} (${this.agent})`, '--no-focus']);
-    this.workspaceId = pick(ws, 'result.workspace.workspace_id', 'result.workspace.id') ?? '';
-    const pane = pick(ws, 'result.root_pane.pane_id', 'result.root_pane.id');
-    if (!pane) throw new Error(`herdr workspace create returned no pane: ${JSON.stringify(ws).slice(0, 300)}`);
+    const { paneId: pane } = await claimPane(this.ctx.gameId, this.workdir);
+    await herdr(['pane', 'rename', pane, `${this.ctx.player} · ${this.agent}`]).catch(() => {});
 
-    await herdr(['agent', 'start', this.name, '--kind', this.agent, '--pane', pane, '--timeout', '120000', '--', ...agentArgs(this.agent)], 130_000);
+    try {
+      await herdr(['agent', 'start', this.name, '--kind', this.agent, '--pane', pane, '--timeout', '120000', '--', ...agentArgs(this.agent)], 130_000);
+    } catch (e) {
+      // Blocked during startup: usually the "trust this folder?" dialog for the fresh workdir.
+      if (!/agent_not_ready|blocked/.test((e as Error).message)) throw e;
+    }
+    await this.passStartupDialogs();
     await this.prompt(
       'You are about to play a game. Read briefing.md in your current directory now; it has the full rules and the ' +
         'file-based protocol you must follow every round. Do not read anything else. Reply with just: READY',
       180_000,
     );
+  }
+
+  /**
+   * Accept the workspace-trust dialog some agents show for a new folder. The folder is a temp dir this server
+   * just created containing only briefing.md, so trusting it is safe. Any other blocking prompt is an error.
+   */
+  private async passStartupDialogs(): Promise<void> {
+    for (let i = 0; i < 5; i++) {
+      const res = await herdr(['agent', 'wait', this.name, '--timeout', '60000'], 65_000);
+      if (pick(res, 'result.agent.agent_status', 'result.agent_status', 'result.agent.status', 'result.status') !== 'blocked') return;
+      const screen = JSON.stringify(await herdr(['agent', 'read', this.name, '--source', 'visible']));
+      if (/trust (this|the) (folder|directory|files)/i.test(screen)) {
+        await herdr(['agent', 'send-keys', this.name, 'down', 'enter']);
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      throw new Error(`agent blocked at startup: ${screen.slice(-300)}`);
+    }
+    throw new Error('agent still blocked after startup dialogs');
   }
 
   async decide(input: AiRoundInput, deadline: number): Promise<AiResponse> {
@@ -135,12 +207,12 @@ export class HerdrAgentPlayer implements AiPlayer {
   }
 
   async stop(): Promise<void> {
-    if (this.workspaceId) await herdr(['workspace', 'close', this.workspaceId], 10_000).catch(() => {});
+    await closeTable(this.ctx.gameId);
   }
 
   private async prompt(text: string, timeoutMs: number): Promise<void> {
     const res = await herdr(['agent', 'prompt', this.name, text, '--wait', '--timeout', String(Math.floor(timeoutMs))], timeoutMs + 5000);
-    const status = pick(res, 'result.agent.status', 'result.status', 'result.state', 'result.agent.state');
+    const status = pick(res, 'result.agent.agent_status', 'result.agent_status', 'result.agent.status', 'result.status');
     if (status === 'blocked') throw new Error('agent is blocked on an approval/question prompt');
   }
 }

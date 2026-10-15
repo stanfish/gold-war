@@ -11,14 +11,19 @@ const ActionSchema = z
     mine_id: z.string().optional(),
   });
 
-export const AiResponseSchema = z.object({
-  actions: z.array(ActionSchema),
-  messages: z.array(z.string()).optional().default([]),
-  notes: z.string().optional().default(''),
-  thinking: z.string().optional().default(''),
-});
+export const AiResponseSchema = z
+  .object({
+    actions: z.array(ActionSchema),
+    messages: z.array(z.string()).optional().default([]),
+    notes: z.string().optional().default(''),
+    /** Short per-worker explanation. Not called "thinking" in the prompt: asking a model to dump its
+     *  reasoning trace can trip provider safeguards. Older "thinking" key still accepted. */
+    rationale: z.string().optional(),
+    thinking: z.string().optional(),
+  })
+  .transform(({ rationale, thinking, ...rest }) => ({ ...rest, thinking: rationale ?? thinking ?? '' }));
 
-export type AiResponse = z.infer<typeof AiResponseSchema>;
+export type AiResponse = z.output<typeof AiResponseSchema>;
 
 /** Parse an AI response; tolerates surrounding prose or ```json fences. Throws with a readable message. */
 export function parseAiResponse(raw: string): AiResponse {

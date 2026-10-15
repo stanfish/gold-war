@@ -16,7 +16,7 @@ import {
   type ServerMessage,
 } from '@gold-war/engine';
 import { BotPlayer } from './ai/bot.js';
-import { AGENT_ISOLATION, HERDR_AGENT_KINDS, HerdrAgentPlayer } from './ai/herdr.js';
+import { AGENT_ISOLATION, HERDR_AGENT_KINDS, HerdrAgentPlayer, herdrAvailable } from './ai/herdr.js';
 import { GameSession, type AiFactory } from './session.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -32,7 +32,7 @@ const app = Fastify({ logger: { level: 'info' } });
 app.get('/api/meta', async () => ({
   agents: ['bot', ...HERDR_AGENT_KINDS],
   isolation: AGENT_ISOLATION,
-  insideHerdr: process.env.HERDR_ENV === '1',
+  herdrAvailable: await herdrAvailable(),
   sizeDefaults: SIZE_DEFAULTS,
 }));
 
@@ -129,4 +129,11 @@ app.server.on('upgrade', (req, socket, head) => {
 });
 
 await app.listen({ port: PORT, host: '127.0.0.1' });
-if (process.env.HERDR_ENV !== '1') app.log.warn('Not running inside herdr: herdr-backed AI players will fail. Built-in "bot" works.');
+if (!(await herdrAvailable())) app.log.warn('herdr server not reachable: herdr-backed AI players will fail. Built-in "bot" works.');
+
+// Close agent panes/workspaces on shutdown so no orphaned agents keep running.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(sig, () => {
+    void (session?.stop() ?? Promise.resolve()).finally(() => process.exit(0));
+  });
+}

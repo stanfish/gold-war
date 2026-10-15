@@ -7,6 +7,28 @@ type Draft = { action: 'MOVE'; dx: number; dy: number } | { action: 'COLLECT'; m
 
 const COST: Record<Draft['action'], number> = { MOVE: 1, COLLECT: 1, STAY: 0.5, DELETE: 0 };
 
+type Dir = 'up' | 'down' | 'left' | 'right';
+const DIRS: Record<Dir, { dx: number; dy: number; label: string }> = {
+  up: { dx: 0, dy: -1, label: '↑ up' },
+  down: { dx: 0, dy: 1, label: '↓ down' },
+  left: { dx: -1, dy: 0, label: '← left' },
+  right: { dx: 1, dy: 0, label: '→ right' },
+};
+
+function dirOf(dx: number, dy: number): Dir | null {
+  if (dy < 0) return 'up';
+  if (dy > 0) return 'down';
+  if (dx < 0) return 'left';
+  if (dx > 0) return 'right';
+  return null;
+}
+
+/** Farthest legal distance in a direction: move range, clipped at the map edge. */
+function maxDist(w: { x: number; y: number }, dir: Dir, n: number, range: number): number {
+  const edge = dir === 'up' ? w.y : dir === 'down' ? n - 1 - w.y : dir === 'left' ? w.x : n - 1 - w.x;
+  return Math.min(range, edge);
+}
+
 export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const { msg, error, connected, send } = useGameSocket<SeatUpdate>(seat, k);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -53,6 +75,12 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const playing = msg.phase === 'playing' && view.status === 'active' && msg.deadline !== null;
   const total = view.workers.reduce((s, w) => s + COST[drafts[w.id]?.action ?? 'STAY'], 0);
   const affordable = total <= view.gold;
+  // A MOVE picked in the dropdown but without a direction yet is pending (dx = dy = 0).
+  const pendingMoves = view.workers.filter((w) => {
+    const d = drafts[w.id];
+    return d?.action === 'MOVE' && d.dx === 0 && d.dy === 0;
+  });
+  const range = view.settings.move_range;
   const collectable = view.known_mines.filter((m) => m.collectable);
   const opp: PlayerId = seat === 'p1' ? 'p2' : 'p1';
   const setDraft = (id: string, d: Draft) => setDrafts((all) => ({ ...all, [id]: d }));
@@ -71,7 +99,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   // Planned MOVE destinations as ghost markers.
   for (const w of view.workers) {
     const d = drafts[w.id];
-    if (d?.action === 'MOVE')
+    if (d?.action === 'MOVE' && (d.dx !== 0 || d.dy !== 0))
       units.push({ key: `g${w.id}`, x: w.x + d.dx, y: w.y + d.dy, color: PLAYER_COLORS[seat], stale: true, label: w.id.slice(1) });
   }
 
@@ -146,18 +174,14 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
                     onChange={(e) => {
                       const v = e.target.value;
                       if (v.startsWith('COLLECT:')) setDraft(w.id, { action: 'COLLECT', mine_id: v.slice(8) });
-                      else if (v === 'MOVE') setSelected(w.id);
-                      else setDraft(w.id, { action: v as 'STAY' | 'DELETE' });
+                      else if (v === 'MOVE') {
+                        setSelected(w.id);
+                        if (d.action !== 'MOVE') setDraft(w.id, { action: 'MOVE', dx: 0, dy: 0 });
+                      } else setDraft(w.id, { action: v as 'STAY' | 'DELETE' });
                     }}
                   >
                     <option value="STAY">STAY (0.5)</option>
-                    {d.action === 'MOVE' ? (
-                      <option value="MOVE">
-                        MOVE {d.dx !== 0 ? `dx ${d.dx}` : `dy ${d.dy}`} (1)
-                      </option>
-                    ) : (
-                      <option value="MOVE">MOVE… click map (1)</option>
-                    )}
+                    <option value="MOVE">MOVE (1)</option>
                     {collectable.map((m) => (
                       <option key={m.id} value={`COLLECT:${m.id}`}>
                         COLLECT {m.id} +{m.payout} (1)
@@ -165,6 +189,14 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
                     ))}
                     <option value="DELETE">DELETE (0)</option>
                   </select>
+                  {d.action === 'MOVE' && (
+                    <MoveControls
+                      draft={d}
+                      disabled={!playing}
+                      max={(dir) => maxDist(w, dir, n, range)}
+                      onChange={(dx, dy) => setDraft(w.id, { action: 'MOVE', dx, dy })}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -190,7 +222,12 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
                 ))}
               </div>
             )}
-            <button className="primary" disabled={!playing || !affordable} onClick={submit}>
+            {pendingMoves.length > 0 && (
+              <p className="danger small">
+                Pick a direction for {pendingMoves.map((w) => w.id).join(', ')} (or click a highlighted square).
+              </p>
+            )}
+            <button className="primary" disabled={!playing || !affordable || pendingMoves.length > 0} onClick={submit}>
               {msg.mySubmission ? 'Resubmit orders' : 'Submit orders'}
             </button>
             {msg.mySubmission && <p className="muted small">Submitted — you can change orders until both players are in.</p>}
@@ -226,6 +263,46 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
           )}
         </aside>
       </main>
+    </div>
+  );
+}
+
+function MoveControls(props: {
+  draft: { dx: number; dy: number };
+  disabled: boolean;
+  max: (dir: Dir) => number;
+  onChange: (dx: number, dy: number) => void;
+}) {
+  const dir = dirOf(props.draft.dx, props.draft.dy);
+  const dist = Math.abs(props.draft.dx) + Math.abs(props.draft.dy);
+  const set = (d: Dir, k: number) => {
+    const m = props.max(d);
+    const clamped = Math.max(1, Math.min(m, k));
+    if (m < 1) return;
+    props.onChange(DIRS[d].dx * clamped, DIRS[d].dy * clamped);
+  };
+  return (
+    <div className="move-controls" onClick={(e) => e.stopPropagation()}>
+      {(Object.keys(DIRS) as Dir[]).map((d) => (
+        <button
+          key={d}
+          className={dir === d ? 'on' : ''}
+          disabled={props.disabled || props.max(d) < 1}
+          title={DIRS[d].label}
+          onClick={() => set(d, dist || props.max(d))}
+        >
+          {DIRS[d].label.split(' ')[0]}
+        </button>
+      ))}
+      <input
+        type="number"
+        min={1}
+        max={dir ? props.max(dir) : 1}
+        value={dist || ''}
+        placeholder="dist"
+        disabled={props.disabled || !dir}
+        onChange={(e) => dir && set(dir, Number(e.target.value))}
+      />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { defaultSettings, type CreateGameResponse, type PlayerId, type SeatConfi
 interface Meta {
   agents: string[];
   isolation: Record<string, string>;
-  insideHerdr: boolean;
+  herdrAvailable: boolean;
   sizeDefaults: Record<number, { mineCount: number; mineMin: number; mineMax: number; moveRange: number }>;
 }
 
@@ -133,8 +133,8 @@ export function SetupPage() {
           {settings.payoutMax}
         </p>
 
-        {usesHerdr && meta && !meta.insideHerdr && (
-          <p className="danger small">Server is not running inside herdr — CLI agents cannot be launched. Start the server from a herdr pane, or pick “bot”.</p>
+        {usesHerdr && meta && !meta.herdrAvailable && (
+          <p className="danger small">herdr server not reachable — CLI agents cannot be launched. Start herdr (run `herdr` in a terminal), or pick “bot”.</p>
         )}
         <button className="primary" disabled={busy} onClick={create}>
           {busy ? 'Creating…' : 'Start game'}

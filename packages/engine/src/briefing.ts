@@ -82,7 +82,7 @@ Write ONLY this JSON (no prose) to the response file path you are given:
   ],
   "messages": ["optional table talk"],
   "notes": "persistent notes you want back next round (mines, opponent patterns, plans)",
-  "thinking": "this round's reasoning: why each worker got its action"
+  "rationale": "one short line per worker: what it does and why (shown to spectators)"
 }
 \`\`\`
 - MOVE needs dx/dy (one of them 0) or a target x/y. COLLECT needs mine_id. STAY/DELETE need nothing.
