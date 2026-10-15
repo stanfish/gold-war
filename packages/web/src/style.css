@@ -44,7 +44,7 @@ button.primary { background: var(--accent); color: #111; border-color: var(--acc
 .worker-row.sel { background: #1f2937; outline: 1px solid #4da3ff; }
 .worker-row { flex-wrap: wrap; }
 .worker-row select { max-width: 210px; }
-.move-controls { display: flex; gap: 4px; width: 100%; justify-content: flex-end; }
+.move-controls { display: flex; gap: 4px; width: 100%; justify-content: flex-end; align-items: center; }
 .move-controls button { padding: 2px 8px; }
 .move-controls button.on { background: #4da3ff; color: #111; border-color: #4da3ff; }
 .move-controls input { width: 64px; }

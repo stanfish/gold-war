@@ -48,4 +48,5 @@ pnpm typecheck
 - Missing/failed actions (human timeout or AI failure) → STAY (DELETE if STAY unaffordable).
 - 0 workers loses unless both players have 0 workers (then more gold wins).
 - Invalid actions are converted to STAY *before* the affordability check.
+- MOVE = up to N orthogonal steps in any mix of directions (destination within Manhattan distance N).
 - Vision uses final positions only; squares passed through during a MOVE are not revealed.

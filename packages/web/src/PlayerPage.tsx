@@ -8,26 +8,12 @@ type Draft = { action: 'MOVE'; dx: number; dy: number } | { action: 'COLLECT'; m
 const COST: Record<Draft['action'], number> = { MOVE: 1, COLLECT: 1, STAY: 0.5, DELETE: 0 };
 
 type Dir = 'up' | 'down' | 'left' | 'right';
-const DIRS: Record<Dir, { dx: number; dy: number; label: string }> = {
-  up: { dx: 0, dy: -1, label: '↑ up' },
-  down: { dx: 0, dy: 1, label: '↓ down' },
-  left: { dx: -1, dy: 0, label: '← left' },
-  right: { dx: 1, dy: 0, label: '→ right' },
+const DIRS: Record<Dir, { dx: number; dy: number; arrow: string }> = {
+  up: { dx: 0, dy: -1, arrow: '↑' },
+  down: { dx: 0, dy: 1, arrow: '↓' },
+  left: { dx: -1, dy: 0, arrow: '←' },
+  right: { dx: 1, dy: 0, arrow: '→' },
 };
-
-function dirOf(dx: number, dy: number): Dir | null {
-  if (dy < 0) return 'up';
-  if (dy > 0) return 'down';
-  if (dx < 0) return 'left';
-  if (dx > 0) return 'right';
-  return null;
-}
-
-/** Farthest legal distance in a direction: move range, clipped at the map edge. */
-function maxDist(w: { x: number; y: number }, dir: Dir, n: number, range: number): number {
-  const edge = dir === 'up' ? w.y : dir === 'down' ? n - 1 - w.y : dir === 'left' ? w.x : n - 1 - w.x;
-  return Math.min(range, edge);
-}
 
 export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const { msg, error, connected, send } = useGameSocket<SeatUpdate>(seat, k);
@@ -53,12 +39,14 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   const moveTargets = useMemo(() => {
     const out = new Set<number>();
     if (!selWorker || !view) return out;
+    // Any square within Manhattan distance move_range (steps may mix directions).
     const r = view.settings.move_range;
-    for (let d = 1; d <= r; d++) {
-      for (const [dx, dy] of [[d, 0], [-d, 0], [0, d], [0, -d]] as const) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const dist = Math.abs(dx) + Math.abs(dy);
         const x = selWorker.x + dx;
         const y = selWorker.y + dy;
-        if (x >= 0 && y >= 0 && x < n && y < n) out.add(y * n + x);
+        if (dist >= 1 && dist <= r && x >= 0 && y >= 0 && x < n && y < n) out.add(y * n + x);
       }
     }
     return out;
@@ -193,7 +181,12 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
                     <MoveControls
                       draft={d}
                       disabled={!playing}
-                      max={(dir) => maxDist(w, dir, n, range)}
+                      canGo={(dx, dy) => {
+                        const x = w.x + dx;
+                        const y = w.y + dy;
+                        return Math.abs(dx) + Math.abs(dy) <= range && x >= 0 && y >= 0 && x < n && y < n;
+                      }}
+                      range={range}
                       onChange={(dx, dy) => setDraft(w.id, { action: 'MOVE', dx, dy })}
                     />
                   )}
@@ -224,14 +217,14 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
             )}
             {pendingMoves.length > 0 && (
               <p className="danger small">
-                Pick a direction for {pendingMoves.map((w) => w.id).join(', ')} (or click a highlighted square).
+                Add at least one step for {pendingMoves.map((w) => w.id).join(', ')} (or click a highlighted square).
               </p>
             )}
             <button className="primary" disabled={!playing || !affordable || pendingMoves.length > 0} onClick={submit}>
               {msg.mySubmission ? 'Resubmit orders' : 'Submit orders'}
             </button>
             {msg.mySubmission && <p className="muted small">Submitted — you can change orders until both players are in.</p>}
-            <p className="muted small">Select a worker, then click a highlighted square to MOVE. Wheel/drag to zoom/pan.</p>
+            <p className="muted small">Select a worker, then click a highlighted square to MOVE (or use the step buttons). Wheel/drag to zoom/pan.</p>
           </section>
 
           <section>
@@ -267,42 +260,34 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
   );
 }
 
+/** Step buttons: each click adds one step; steps may mix directions up to the move range. */
 function MoveControls(props: {
   draft: { dx: number; dy: number };
   disabled: boolean;
-  max: (dir: Dir) => number;
+  range: number;
+  canGo: (dx: number, dy: number) => boolean;
   onChange: (dx: number, dy: number) => void;
 }) {
-  const dir = dirOf(props.draft.dx, props.draft.dy);
-  const dist = Math.abs(props.draft.dx) + Math.abs(props.draft.dy);
-  const set = (d: Dir, k: number) => {
-    const m = props.max(d);
-    const clamped = Math.max(1, Math.min(m, k));
-    if (m < 1) return;
-    props.onChange(DIRS[d].dx * clamped, DIRS[d].dy * clamped);
-  };
+  const { dx, dy } = props.draft;
+  const used = Math.abs(dx) + Math.abs(dy);
+  const parts = [dy < 0 && `${-dy}↑`, dy > 0 && `${dy}↓`, dx < 0 && `${-dx}←`, dx > 0 && `${dx}→`].filter(Boolean);
   return (
     <div className="move-controls" onClick={(e) => e.stopPropagation()}>
-      {(Object.keys(DIRS) as Dir[]).map((d) => (
-        <button
-          key={d}
-          className={dir === d ? 'on' : ''}
-          disabled={props.disabled || props.max(d) < 1}
-          title={DIRS[d].label}
-          onClick={() => set(d, dist || props.max(d))}
-        >
-          {DIRS[d].label.split(' ')[0]}
-        </button>
-      ))}
-      <input
-        type="number"
-        min={1}
-        max={dir ? props.max(dir) : 1}
-        value={dist || ''}
-        placeholder="dist"
-        disabled={props.disabled || !dir}
-        onChange={(e) => dir && set(dir, Number(e.target.value))}
-      />
+      <span className="muted small">
+        {parts.length ? parts.join(' ') : 'no steps'} · {used}/{props.range}
+      </span>
+      {(Object.keys(DIRS) as Dir[]).map((d) => {
+        const nx = dx + DIRS[d].dx;
+        const ny = dy + DIRS[d].dy;
+        return (
+          <button key={d} disabled={props.disabled || !props.canGo(nx, ny)} title={`step ${d}`} onClick={() => props.onChange(nx, ny)}>
+            {DIRS[d].arrow}
+          </button>
+        );
+      })}
+      <button disabled={props.disabled || used === 0} title="clear steps" onClick={() => props.onChange(0, 0)}>
+        ✕
+      </button>
     </div>
   );
 }

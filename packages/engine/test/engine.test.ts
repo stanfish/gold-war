@@ -84,6 +84,15 @@ describe('costs and moves', () => {
     expect(state.players.p2.gold2).toBe(35);
   });
 
+  it('MOVE may combine directions within range (Manhattan distance)', () => {
+    const { state } = resolveRound(game(), {
+      p1: { actions: [act('w1', 'MOVE', { dx: 2, dy: -2 }), act('w2', 'MOVE', { x: 14, y: 18 }), ...allStay().actions.slice(2)] },
+      p2: allStay(),
+    });
+    expect(state.players.p1.workers[0]).toMatchObject({ x: 17, y: 13 });
+    expect(state.players.p1.workers[1]).toMatchObject({ x: 14, y: 18 });
+  });
+
   it('accepts MOVE by target x/y', () => {
     const { state } = resolveRound(game(), {
       p1: { actions: [act('w1', 'MOVE', { x: 15, y: 11 }), ...allStay().actions.slice(1)] },
@@ -93,9 +102,9 @@ describe('costs and moves', () => {
   });
 
   it.each([
-    ['diagonal', { dx: 1, dy: 1 }],
     ['zero', { dx: 0, dy: 0 }],
     ['too far', { dx: 5, dy: 0 }],
+    ['too far combined', { dx: 3, dy: -2 }],
     ['off map', { dx: 0, dy: 0, x: 15, y: 40 }],
     ['fractional', { dx: 1.5, dy: 0 }],
   ])('invalid MOVE (%s) becomes STAY', (_, params) => {

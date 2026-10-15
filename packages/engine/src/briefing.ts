@@ -26,7 +26,7 @@ Each round both players act simultaneously. Every worker gets exactly 1 action:
 
 | Action  | Cost     | Effect |
 |---------|----------|--------|
-| MOVE    | 1 gold   | Move 1-${s.moveRange} squares in ONE orthogonal direction (dx or dy, not both). Cannot leave the map. |
+| MOVE    | 1 gold   | Take 1-${s.moveRange} orthogonal steps (up/down/left/right, mixed freely, no diagonal steps): any square with \\|dx\\|+\\|dy\\| <= ${s.moveRange}. Cannot leave the map. |
 | STAY    | 0.5 gold | Do nothing. |
 | COLLECT | 1 gold   | Collect from any known mine, from anywhere. The worker then returns to the base. |
 | DELETE  | 0 gold   | Remove the worker for the rest of the game. |
@@ -85,7 +85,7 @@ Write ONLY this JSON (no prose) to the response file path you are given:
   "rationale": "one short line per worker: what it does and why (shown to spectators)"
 }
 \`\`\`
-- MOVE needs dx/dy (one of them 0) or a target x/y. COLLECT needs mine_id. STAY/DELETE need nothing.
+- MOVE needs dx/dy (|dx|+|dy| between 1 and ${s.moveRange}) or a target x/y. COLLECT needs mine_id. STAY/DELETE need nothing.
 - Give every worker exactly one action. Keep "notes" compact; it is your only memory between rounds.
 `;
 }

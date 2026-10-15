@@ -45,7 +45,8 @@ export function validateAction(state: GameState, player: PlayerId, worker: Worke
         return 'MOVE needs dx/dy or x/y';
       }
       if (!Number.isInteger(dx) || !Number.isInteger(dy)) return 'MOVE offsets must be integers';
-      if ((dx !== 0) === (dy !== 0)) return 'MOVE must be orthogonal and non-zero';
+      // Steps are orthogonal, but may combine directions: any destination within Manhattan distance N.
+      if (dx === 0 && dy === 0) return 'MOVE must go somewhere';
       const dist = Math.abs(dx) + Math.abs(dy);
       if (dist > state.settings.moveRange) return `MOVE distance ${dist} exceeds range ${state.settings.moveRange}`;
       if (!inBounds(n, worker.x + dx, worker.y + dy)) return 'MOVE leaves the map';
