@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import { defaultSettings, type CreateGameResponse, type PlayerId, type SeatConfig, type Settings } from '@gold-war/engine';
+import { defaultSettings, type AgentOption, type CreateGameResponse, type PlayerId, type SeatConfig, type Settings } from '@gold-war/engine';
 
 interface Meta {
-  agents: string[];
-  isolation: Record<string, string>;
+  agents: AgentOption[];
   herdrAvailable: boolean;
   sizeDefaults: Record<number, { mineCount: number; mineMin: number; mineMax: number; moveRange: number }>;
 }
@@ -13,7 +12,7 @@ type Mode = 'pvp' | 'pva' | 'ava';
 export function SetupPage() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [mode, setMode] = useState<Mode>('pva');
-  const [agents, setAgents] = useState<Record<PlayerId, string>>({ p1: 'claude', p2: 'bot' });
+  const [agents, setAgents] = useState<Record<PlayerId, string>>({ p1: 'claude-opus', p2: 'claude-sonnet' });
   const [settings, setSettings] = useState<Settings>(defaultSettings(30));
   const [result, setResult] = useState<CreateGameResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,13 +62,17 @@ export function SetupPage() {
     <label>
       {p.toUpperCase()} agent
       <select value={agents[p]} onChange={(e) => setAgents({ ...agents, [p]: e.target.value })}>
-        {(meta?.agents ?? ['bot']).map((a) => (
-          <option key={a} value={a}>
-            {a === 'bot' ? 'bot (built-in scripted)' : a}
+        {(meta?.agents ?? []).map((a) => (
+          <option key={a.id} value={a.id} disabled={!a.installed}>
+            {a.label}
+            {a.installed ? '' : ' (not installed)'}
           </option>
         ))}
       </select>
-      {meta?.isolation[agents[p]] && <span className="muted small">{meta.isolation[agents[p]]}</span>}
+      {(() => {
+        const iso = meta?.agents.find((a) => a.id === agents[p])?.isolation;
+        return iso && <span className="muted small">{iso}</span>;
+      })()}
     </label>
   );
 

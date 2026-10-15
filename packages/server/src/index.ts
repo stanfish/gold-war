@@ -11,12 +11,13 @@ import {
   validateSettings,
   type ClientMessage,
   type CreateGameRequest,
+  type AgentOption,
   type CreateGameResponse,
   type PlayerId,
   type ServerMessage,
 } from '@gold-war/engine';
 import { BotPlayer } from './ai/bot.js';
-import { AGENT_ISOLATION, HERDR_AGENT_KINDS, HerdrAgentPlayer, herdrAvailable } from './ai/herdr.js';
+import { AGENT_PRESETS, HerdrAgentPlayer, findPreset, herdrAvailable, installedKinds, presetIsolation } from './ai/herdr.js';
 import { GameSession, type AiFactory } from './session.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -27,11 +28,18 @@ const makeAi: AiFactory = (agent, ctx) => (agent === 'bot' ? new BotPlayer(ctx) 
 
 let session: GameSession | null = null;
 
+async function agentList(): Promise<AgentOption[]> {
+  const installed = await installedKinds();
+  return [
+    { id: 'bot', label: 'bot (built-in scripted)', installed: true },
+    ...AGENT_PRESETS.map((p) => ({ id: p.id, label: p.label, installed: installed.has(p.kind), isolation: presetIsolation(p.id) })),
+  ];
+}
+
 const app = Fastify({ logger: { level: 'info' } });
 
 app.get('/api/meta', async () => ({
-  agents: ['bot', ...HERDR_AGENT_KINDS],
-  isolation: AGENT_ISOLATION,
+  agents: await agentList(),
   herdrAvailable: await herdrAvailable(),
   sizeDefaults: SIZE_DEFAULTS,
 }));
@@ -46,7 +54,7 @@ app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
   for (const p of PLAYERS) {
     const seat = body?.seats?.[p];
     if (!seat || (seat.type !== 'human' && seat.type !== 'ai')) errs.push(`seat ${p} invalid`);
-    else if (seat.type === 'ai' && !['bot', ...HERDR_AGENT_KINDS].includes(seat.agent)) errs.push(`unknown agent ${seat.agent}`);
+    else if (seat.type === 'ai' && seat.agent !== 'bot' && !findPreset(seat.agent)) errs.push(`unknown agent ${seat.agent}`);
   }
   if (errs.length) return reply.code(400).send({ error: errs.join('; ') });
 

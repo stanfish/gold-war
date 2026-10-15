@@ -21,7 +21,8 @@ Dev mode with hot reload: `pnpm -C packages/server dev` and `pnpm -C packages/we
 
 Start the server **from inside a herdr pane** (`HERDR_ENV=1`). For each AI seat the server:
 1. creates a private temp workdir + its own herdr workspace,
-2. `herdr agent start --kind <agent>` with locked-down args (claude: no Bash/web tools; codex: workspace-write sandbox),
+2. `herdr agent start --kind <kind>` with locked-down args (claude: no Bash/web tools; codex: workspace-write sandbox).
+   Presets live in `AGENT_PRESETS` (`packages/server/src/ai/herdr.ts`): **Claude Opus** / **Claude Sonnet** = `claude --model opus|sonnet`,
 3. writes `briefing.md`, then each round `state-N.json`, and prompts the agent to write `response-N.json`.
 
 Override launch args per kind: `GOLDWAR_AGENT_ARGS_CLAUDE='["--model","opus","--permission-mode","acceptEdits","--disallowedTools","Bash"]'`.

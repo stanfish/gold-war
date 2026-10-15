@@ -17,12 +17,44 @@ const DEFAULT_AGENT_ARGS: Record<string, string[]> = {
 };
 
 /** Isolation status per kind, surfaced in the setup UI. */
-export const AGENT_ISOLATION: Record<string, string> = {
+const KIND_ISOLATION: Record<string, string> = {
   claude: 'no shell / no web tools; file edits auto-accepted',
   codex: 'workspace-write sandbox, never asks approval (sandbox may still allow reads outside workdir)',
 };
 
-export const HERDR_AGENT_KINDS = ['claude', 'codex', 'grok', 'gemini', 'qwen', 'kimi', 'opencode', 'cursor', 'copilot', 'amp'];
+/** A selectable AI: a herdr agent kind plus optional extra CLI args (e.g. the model). */
+export interface AgentPreset {
+  id: string;
+  label: string;
+  kind: string;
+  extraArgs: string[];
+}
+
+const OTHER_KINDS = ['codex', 'grok', 'gemini', 'qwen', 'kimi', 'opencode', 'cursor', 'copilot', 'amp'];
+
+export const AGENT_PRESETS: AgentPreset[] = [
+  { id: 'claude-opus', label: 'Claude Opus', kind: 'claude', extraArgs: ['--model', 'opus'] },
+  { id: 'claude-sonnet', label: 'Claude Sonnet', kind: 'claude', extraArgs: ['--model', 'sonnet'] },
+  ...OTHER_KINDS.map((k) => ({ id: k, label: k, kind: k, extraArgs: [] })),
+];
+
+export function findPreset(id: string): AgentPreset | undefined {
+  return AGENT_PRESETS.find((p) => p.id === id);
+}
+
+export function presetIsolation(id: string): string | undefined {
+  const p = findPreset(id);
+  return p && KIND_ISOLATION[p.kind];
+}
+
+/** Agent CLIs found on PATH (by kind). */
+export async function installedKinds(): Promise<Set<string>> {
+  const kinds = [...new Set(AGENT_PRESETS.map((p) => p.kind))];
+  const found = await Promise.all(
+    kinds.map((k) => new Promise<boolean>((resolve) => execFile('which', [k], (err) => resolve(!err)))),
+  );
+  return new Set(kinds.filter((_, i) => found[i]));
+}
 
 export function agentArgs(kind: string): string[] {
   const override = process.env[`GOLDWAR_AGENT_ARGS_${kind.toUpperCase()}`];
@@ -124,10 +156,15 @@ export class HerdrAgentPlayer implements AiPlayer {
   private workdir = '';
   private readonly name: string;
 
+  private readonly preset: AgentPreset;
+
   constructor(
     readonly agent: string,
     private ctx: AiPlayerContext,
   ) {
+    const preset = findPreset(agent);
+    if (!preset) throw new Error(`unknown agent ${agent}`);
+    this.preset = preset;
     this.name = `gw-${ctx.gameId.slice(0, 8)}-${ctx.player}`;
   }
 
@@ -138,10 +175,10 @@ export class HerdrAgentPlayer implements AiPlayer {
     writeFileSync(join(this.workdir, 'briefing.md'), briefing);
 
     const { paneId: pane } = await claimPane(this.ctx.gameId, this.workdir);
-    await herdr(['pane', 'rename', pane, `${this.ctx.player} · ${this.agent}`]).catch(() => {});
+    await herdr(['pane', 'rename', pane, `${this.ctx.player} · ${this.preset.label}`]).catch(() => {});
 
     try {
-      await herdr(['agent', 'start', this.name, '--kind', this.agent, '--pane', pane, '--timeout', '120000', '--', ...agentArgs(this.agent)], 130_000);
+      await herdr(['agent', 'start', this.name, '--kind', this.preset.kind, '--pane', pane, '--timeout', '120000', '--', ...this.preset.extraArgs, ...agentArgs(this.preset.kind)], 130_000);
     } catch (e) {
       // Blocked during startup: usually the "trust this folder?" dialog for the fresh workdir.
       if (!/agent_not_ready|blocked/.test((e as Error).message)) throw e;
