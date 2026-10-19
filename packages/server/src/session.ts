@@ -17,12 +17,13 @@ import {
   type GodUpdate,
   type Phase,
   type PlayerId,
+  type RelayPrompt,
   type RoundEvent,
   type SeatConfig,
   type SeatUpdate,
   type SubmittedAction,
 } from '@gold-war/engine';
-import type { AiResponse } from './ai/parse.js';
+import { parseAiResponse, type AiResponse } from './ai/parse.js';
 import type { AiPlayer, AiPlayerContext, AiRoundInput } from './ai/types.js';
 
 /** Table talk is real-time: per player, per round. */
@@ -84,6 +85,8 @@ export class GameSession {
   private history: RoundRecord[] = [];
   private connected = new Set<PlayerId>();
   private ai: Partial<Record<PlayerId, { player: AiPlayer; panel: AiPanel }>> = {};
+  /** Relay seats ("player with AI"): same panel as an AI so the GOD view shows notes/rationale. */
+  private relay: Partial<Record<PlayerId, AiPanel>> = {};
   /** AI players with a turn in flight (one at a time per agent). */
   private aiBusy = new Set<PlayerId>();
   /** AI players with unanswered opponent messages. */
@@ -97,14 +100,17 @@ export class GameSession {
     private opts: { makeAi: AiFactory; logDir: string | null; /** Pause between rounds when no human plays, so spectators can follow. */ aiPaceMs?: number },
   ) {
     const seed = req.seed ?? randomBytes(4).readUInt32LE(0);
-    this.state = createGame(req.settings, seed);
+    const hasRelay = PLAYERS.some((p) => req.seats[p].type === 'relay');
+    // Relay seats can't do real-time chat (each AI turn is a manual copy-paste), so table talk is off for the game.
+    this.state = createGame(hasRelay ? { ...req.settings, tableTalk: false } : req.settings, seed);
     this.seats = req.seats;
     const key = () => randomBytes(12).toString('base64url');
     this.keys = { god: key() };
     for (const p of PLAYERS) {
       const seat = req.seats[p];
-      if (seat.type === 'human') this.keys[p] = key();
-      else
+      if (seat.type !== 'ai') this.keys[p] = key();
+      if (seat.type === 'relay') this.relay[p] = { agent: 'player with AI', status: 'ready', notes: '', thinking: {}, lastError: null };
+      if (seat.type === 'ai')
         this.ai[p] = {
           player: opts.makeAi(seat.agent, { gameId: this.id, player: p, seed }),
           panel: { agent: seat.agent, status: 'booting', notes: '', thinking: {}, lastError: null },
@@ -158,14 +164,14 @@ export class GameSession {
   }
 
   humanConnected(p: PlayerId): void {
-    if (this.seats[p].type !== 'human') return;
+    if (this.seats[p].type === 'ai') return;
     this.connected.add(p);
     this.maybeBegin();
   }
 
   private maybeBegin(): void {
     if (this.phase !== 'waiting') return;
-    const missing = PLAYERS.filter((p) => this.seats[p].type === 'human' && !this.connected.has(p));
+    const missing = PLAYERS.filter((p) => this.seats[p].type !== 'ai' && !this.connected.has(p));
     if (missing.length) {
       this.phaseDetail = `waiting for ${missing.join(' and ')} to open their link`;
       this.emit();
@@ -185,6 +191,7 @@ export class GameSession {
     this.aiReplies = { p1: 0, p2: 0 };
     this.aiUnread.clear();
     for (const p of PLAYERS) if (this.ai[p]) void this.runAi(p, token, 'round');
+    for (const r of Object.values(this.relay)) r.status = 'thinking';
     this.emit();
   }
 
@@ -196,8 +203,45 @@ export class GameSession {
       last_round: last ? { events: eventsFor(last.events, p) } : null,
       chat: this.state.settings.tableTalk ? this.chat.slice(-30) : [],
       my_current_orders: this.submissions[p]?.actions ?? null,
-      notes: this.ai[p]?.panel.notes ?? '',
+      notes: (this.ai[p]?.panel ?? this.relay[p])?.notes ?? '',
     };
+  }
+
+  /** Relay seat's copy-paste prompt for the open round (same state an AI seat would get). */
+  private relayPrompt(p: PlayerId): RelayPrompt {
+    const input = this.aiInput(p, 'round');
+    const turn =
+      `# Gold War — round ${input.round} of ${input.rounds_total}\n\n` +
+      `Game state for this round:\n\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n` +
+      'Decide your orders and reply with ONLY the response JSON in the briefing format. Give every worker exactly one action ' +
+      'and keep the set affordable. Put anything you want to remember in "notes": it comes back next round.';
+    return {
+      round: this.state.round,
+      briefing: buildPlayerBriefing(this.state.settings, p, 'chat'),
+      turn,
+      lastError: this.relay[p]?.lastError ?? null,
+    };
+  }
+
+  /** Relay seat pasted the outside AI's reply. Returns an error string if it can't be used. */
+  relaySubmit(p: PlayerId, raw: unknown): string | null {
+    const panel = this.relay[p];
+    if (!panel) return 'this seat is not a player-with-AI seat';
+    if (this.phase !== 'playing') return 'no round is open';
+    if (typeof raw !== 'string' || !raw.trim()) return 'paste the AI reply first';
+    let resp: AiResponse;
+    try {
+      resp = parseAiResponse(raw);
+    } catch (e) {
+      panel.lastError = `round ${this.state.round}: ${(e as Error).message}`;
+      this.emit();
+      return (e as Error).message;
+    }
+    panel.status = 'submitted';
+    panel.lastError = null;
+    panel.notes = resp.notes;
+    panel.thinking[this.state.round] = resp.thinking;
+    return this.submit(p, { actions: resp.actions });
   }
 
   /**
@@ -316,6 +360,11 @@ export class GameSession {
         void a.player.cancel();
       }
     }
+    for (const r of Object.values(this.relay)) {
+      if (r.status !== 'thinking') continue;
+      r.status = 'failed';
+      r.lastError = `round ${this.state.round}: no AI reply pasted in time`;
+    }
 
     const round = this.state.round;
     const subs = this.submissions;
@@ -368,12 +417,13 @@ export class GameSession {
       view: playerView(this.state, p),
       lastEvents: last ? eventsFor(last.events, p) : [],
       mySubmission: mine ? { actions: mine.actions } : null,
+      ...(this.relay[p] && { relay: this.relayPrompt(p) }),
     };
   }
 
   godUpdate(): GodUpdate {
     const ai: GodUpdate['ai'] = {};
-    for (const p of PLAYERS) if (this.ai[p]) ai[p] = this.ai[p]!.panel;
+    for (const p of PLAYERS) if (this.ai[p] || this.relay[p]) ai[p] = this.ai[p]?.panel ?? this.relay[p];
     return {
       ...this.base(),
       type: 'god',
@@ -396,7 +446,7 @@ export class GameSession {
   private async persist(): Promise<void> {
     if (!this.opts.logDir) return;
     const ai: Record<string, AiPanel> = {};
-    for (const p of PLAYERS) if (this.ai[p]) ai[p] = this.ai[p]!.panel;
+    for (const p of PLAYERS) if (this.ai[p] || this.relay[p]) ai[p] = (this.ai[p]?.panel ?? this.relay[p])!;
     const log = {
       gameId: this.id,
       createdAt: this.createdAt,

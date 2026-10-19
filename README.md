@@ -17,6 +17,8 @@ Open http://127.0.0.1:8787, pick settings, **Start game**, then open the generat
 
 Dev mode with hot reload: `pnpm -C packages/server dev` and `pnpm -C packages/web dev` (Vite on :5173 proxies to :8787).
 
+**Player with AI** modes: that seat's link shows one message per round (round 1 includes the rules) to copy into any AI chat outside the game; paste the AI's JSON reply back and it becomes your orders. Table talk is forced off when any seat uses this mode.
+
 Play from other machines on your LAN: prefix with `HOST=0.0.0.0` (e.g. `HOST=0.0.0.0 pnpm start`), then open the links via this machine's IP, e.g. `http://<lan-ip>:8787/player1?k=…`. Default binds loopback only. Note: game creation has no auth, so anyone on the network can start a new game.
 
 ### CLI agents (herdr)

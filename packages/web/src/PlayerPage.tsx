@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { RULES_VERSION, moveError, visibleCells, type PlayerId, type SeatUpdate, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
+import { RelayPage } from './RelayPage';
 import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
 import type { RoundEvent } from '@gold-war/engine';
 
@@ -55,6 +56,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
       </div>
     );
   }
+  if (msg.relay) return <RelayPage msg={msg} send={send} error={error} />;
 
   const playing = msg.phase === 'playing' && view.status === 'active' && msg.deadline !== null;
   const total = view.workers.reduce((s, w) => s + COST[drafts[w.id]?.action ?? 'STAY'], 0);

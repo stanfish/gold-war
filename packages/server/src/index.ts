@@ -55,7 +55,7 @@ app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
   const errs = body?.settings ? validateSettings(body.settings) : ['settings missing'];
   for (const p of PLAYERS) {
     const seat = body?.seats?.[p];
-    if (!seat || (seat.type !== 'human' && seat.type !== 'ai')) errs.push(`seat ${p} invalid`);
+    if (!seat || (seat.type !== 'human' && seat.type !== 'relay' && seat.type !== 'ai')) errs.push(`seat ${p} invalid`);
     else if (seat.type === 'ai' && seat.agent !== 'bot' && !findPreset(seat.agent)) errs.push(`unknown agent ${seat.agent}`);
   }
   if (errs.length) return reply.code(400).send({ error: errs.join('; ') });
@@ -133,7 +133,14 @@ app.server.on('upgrade', (req, socket, head) => {
       } catch {
         return send(ws, { type: 'error', message: 'bad JSON' });
       }
-      const err = msg.type === 'submit' ? s.submit(role, msg) : msg.type === 'chat' ? s.postChat(role, msg.text) : 'unknown message';
+      const err =
+        msg.type === 'submit'
+          ? s.submit(role, msg)
+          : msg.type === 'chat'
+            ? s.postChat(role, msg.text)
+            : msg.type === 'relay'
+              ? s.relaySubmit(role, msg.text)
+              : 'unknown message';
       if (err) send(ws, { type: 'error', message: err });
     });
     send(ws, updateFor(s, role));

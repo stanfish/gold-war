@@ -7,7 +7,7 @@ interface Meta {
   sizeDefaults: Record<number, { mineCount: number; mineMin: number; mineMax: number; moveRange: number }>;
 }
 
-type Mode = 'pvp' | 'pva' | 'ava';
+type Mode = 'pvp' | 'pva' | 'ava' | 'rva' | 'rvp' | 'rvr';
 
 const ROUND_COUNTS = [10, 20, 30, 40, 50];
 
@@ -30,12 +30,18 @@ export function SetupPage() {
   const sizeDef = meta?.sizeDefaults[settings.mapSize];
   const set = (patch: Partial<Settings>) => setSettings((s) => ({ ...s, ...patch }));
 
-  const seats: Record<PlayerId, SeatConfig> =
-    mode === 'pvp'
-      ? { p1: { type: 'human' }, p2: { type: 'human' } }
-      : mode === 'pva'
-        ? { p1: { type: 'human' }, p2: { type: 'ai', agent: agents.p2 } }
-        : { p1: { type: 'ai', agent: agents.p1 }, p2: { type: 'ai', agent: agents.p2 } };
+  const human: SeatConfig = { type: 'human' };
+  const relay: SeatConfig = { type: 'relay' };
+  const ai = (p: PlayerId): SeatConfig => ({ type: 'ai', agent: agents[p] });
+  const seats: Record<PlayerId, SeatConfig> = {
+    pvp: { p1: human, p2: human },
+    pva: { p1: human, p2: ai('p2') },
+    ava: { p1: ai('p1'), p2: ai('p2') },
+    rva: { p1: relay, p2: ai('p2') },
+    rvp: { p1: relay, p2: human },
+    rvr: { p1: relay, p2: relay },
+  }[mode];
+  const hasRelay = Object.values(seats).some((s) => s.type === 'relay');
 
   const payoutInvalid = settings.payoutMin > settings.payoutMax;
   const usesHerdr = Object.values(seats).some((s) => s.type === 'ai' && s.agent !== 'bot');
@@ -91,10 +97,19 @@ export function SetupPage() {
             <option value="pvp">Player vs Player</option>
             <option value="pva">Player vs AI</option>
             <option value="ava">AI vs AI</option>
+            <option value="rva">Player with AI vs AI</option>
+            <option value="rvp">Player with AI vs Player</option>
+            <option value="rvr">Player with AI vs Player with AI</option>
           </select>
         </label>
-        {mode === 'ava' && agentPicker('p1')}
-        {mode !== 'pvp' && agentPicker('p2')}
+        {hasRelay && (
+          <p className="muted small">
+            Player with AI: each round the page shows one message to copy into any AI chat you like, then you paste the AI's reply
+            back. Table talk is off in this mode; pick a long round timer.
+          </p>
+        )}
+        {seats.p1.type === 'ai' && agentPicker('p1')}
+        {seats.p2.type === 'ai' && agentPicker('p2')}
 
         <label>
           Map size
@@ -169,10 +184,11 @@ export function SetupPage() {
             <option value={60}>1 min</option>
             <option value={120}>2 min</option>
             <option value={180}>3 min</option>
+            <option value={300}>5 min</option>
           </select>
         </label>
         <label className="row">
-          <input type="checkbox" checked={settings.tableTalk} onChange={(e) => set({ tableTalk: e.target.checked })} /> Table talk
+          <input type="checkbox" checked={settings.tableTalk && !hasRelay} disabled={hasRelay} onChange={(e) => set({ tableTalk: e.target.checked })} /> Table talk
         </label>
         <label className="row">
           <input type="checkbox" checked={settings.fullRoundTimer} onChange={(e) => set({ fullRoundTimer: e.target.checked })} /> Rounds

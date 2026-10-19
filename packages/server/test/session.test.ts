@@ -60,6 +60,42 @@ describe('GameSession', () => {
     s.stop();
   });
 
+  it('relay seat: one copy-paste prompt per round, pasted AI reply becomes orders, no table talk', async () => {
+    const s = new GameSession(
+      { settings: settings({ tableTalk: true }), seats: { p1: { type: 'relay' }, p2: { type: 'ai', agent: 'bot' } }, seed: 3 },
+      { makeAi: bots, logDir: null },
+    );
+    expect(s.keys.p1).toBeTruthy();
+    expect(s.state.settings.tableTalk).toBe(false);
+    await s.start();
+    expect(s.phase).toBe('waiting');
+    s.humanConnected('p1');
+    await flush();
+    const relay = s.seatUpdate('p1').relay!;
+    expect(relay.round).toBe(1);
+    expect(relay.briefing).toContain('reply with your orders as JSON');
+    expect(relay.briefing).not.toContain('response file');
+    expect(relay.turn).toContain('"you": "p1"');
+    expect(s.seatUpdate('p2').relay).toBeUndefined();
+    expect(s.postChat('p1', 'hi')).toBe('table talk is off');
+
+    expect(s.relaySubmit('p1', 'not json at all')).toMatch(/invalid AI response/);
+    expect(s.seatUpdate('p1').relay?.lastError).toMatch(/invalid AI response/);
+    expect(s.state.round).toBe(1);
+
+    const reply = 'Here you go:\n```json\n{"actions":[{"worker_id":"w1","action":"MOVE","dx":2,"dy":0}],"notes":"went east","rationale":"scout"}\n```';
+    expect(s.relaySubmit('p1', reply)).toBeNull();
+    await flush();
+    expect(s.state.round).toBe(2);
+    expect(s.state.players.p1.workers.find((w) => w.id === 'w1')).toMatchObject({ x: 17, y: 15 });
+    expect(s.godUpdate().ai.p1).toMatchObject({ notes: 'went east', thinking: { 1: 'scout' } });
+    const next = s.seatUpdate('p1').relay!;
+    expect(next.round).toBe(2);
+    expect(next.lastError).toBeNull();
+    expect(next.turn).toContain('went east');
+    s.stop();
+  });
+
   it('resolves on timeout with missing actions as STAY', async () => {
     vi.useFakeTimers();
     try {

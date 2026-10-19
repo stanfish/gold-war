@@ -69,3 +69,11 @@ table.mines td { padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.0
 .form .field { display: flex; flex-direction: column; gap: 4px; }
 .range-pair { display: flex; gap: 16px; }
 .range-pair input { width: 80px; }
+.relay { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.relay section { display: flex; flex-direction: column; gap: 8px; min-height: 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.relay h3 { margin: 0; font-size: 14px; }
+.relay-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.relay-bar label.row { display: flex; align-items: center; gap: 6px; }
+.relay-text { flex: 1; min-height: 240px; max-height: none; resize: vertical; color: var(--text); }
+.relay-text.reply { min-height: 160px; }
+@media (max-width: 800px) { .relay { grid-template-columns: 1fr; } }

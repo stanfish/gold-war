@@ -3,14 +3,19 @@ import type { PlayerId, Settings } from './types.js';
 /**
  * Player briefing for AI players. Identical for both players except the identity line.
  * Never contains mine positions or anything else hidden by fog of war.
+ * io 'files' = herdr agents (state/response files); 'chat' = copy-paste relay (state in the message, reply in chat).
  */
-export function buildPlayerBriefing(s: Settings, player: PlayerId): string {
+export function buildPlayerBriefing(s: Settings, player: PlayerId, io: 'files' | 'chat' = 'files'): string {
   const base = Math.floor(s.mapSize / 2);
+  const chat = io === 'chat';
   return `# Gold War — Player Briefing
 
 You are **${player}** in a 2-player game of Gold War. Your opponent is ${player === 'p1' ? 'p2' : 'p1'}.
-You play by reading a state file each round and writing a response file. Do not try to read any other
-files, panes, processes or network resources: you only know what the state file tells you.
+${chat
+  ? `Each round you get a message with the game state as JSON and reply with your orders as JSON. Do not use
+any tools, files or network resources: you only know what the state tells you.`
+  : `You play by reading a state file each round and writing a response file. Do not try to read any other
+files, panes, processes or network resources: you only know what the state file tells you.`}
 
 ## Your goal
 Win. Finish with more gold than your opponent, or outlast them. Nothing else counts: not fairness, not
@@ -63,7 +68,7 @@ Each round both players act simultaneously. Every worker gets exactly 1 action:
    - After round ${s.roundsTotal}: more gold wins, equal gold = draw.
 
 ## Each round: input
-You will be told the path of a state JSON file, shaped like:
+${chat ? 'Each round\'s message contains the state JSON, shaped like:' : 'You will be told the path of a state JSON file, shaped like:'}
 \`\`\`json
 {
   "you": "${player}", "round": 7, "rounds_total": ${s.roundsTotal}, "gold": 18.5,
@@ -86,7 +91,7 @@ You will be told the path of a state JSON file, shaped like:
 - "my_current_orders": orders you already submitted this round (on a "message" turn), else null.
 
 ## Each round: output
-Write ONLY this JSON (no prose) to the response file path you are given:
+${chat ? 'Reply with ONLY this JSON (no prose, a ```json code block is fine):' : 'Write ONLY this JSON (no prose) to the response file path you are given:'}
 \`\`\`json
 {
   "actions": [

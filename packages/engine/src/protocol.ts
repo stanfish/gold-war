@@ -4,7 +4,8 @@ import type { PlayerView } from './view.js';
 
 /** 'bot' = built-in scripted player; anything else is a herdr agent kind (claude, codex, grok, ...). */
 /** `label` is the display name (e.g. "Claude Opus"), filled in by the server. */
-export type SeatConfig = { type: 'human' } | { type: 'ai'; agent: string; label?: string };
+/** 'relay' = "player with AI": a human copies each round's AI prompt into any AI outside the game and pastes its reply back. */
+export type SeatConfig = { type: 'human' } | { type: 'relay' } | { type: 'ai'; agent: string; label?: string };
 
 /** One entry of the setup screen's AI dropdown. */
 export interface AgentOption {
@@ -69,6 +70,18 @@ export interface SeatUpdate extends UpdateBase {
   lastEvents: RoundEvent[];
   /** This player's own submission for the open round, if any. */
   mySubmission: { actions: SubmittedAction[] } | null;
+  /** Relay seats only: what to paste into the outside AI this round. */
+  relay?: RelayPrompt;
+}
+
+export interface RelayPrompt {
+  round: number;
+  /** Full rules (copy-paste variant). Only needs to go into a fresh AI conversation. */
+  briefing: string;
+  /** This round's message: the state JSON plus the reply instruction. */
+  turn: string;
+  /** Error from the last pasted reply, if it could not be used. */
+  lastError: string | null;
 }
 
 export interface Orders {
@@ -86,4 +99,8 @@ export interface GodUpdate extends UpdateBase {
 
 export type ServerMessage = SeatUpdate | GodUpdate | { type: 'error'; message: string };
 
-export type ClientMessage = { type: 'submit'; actions: SubmittedAction[] } | { type: 'chat'; text: string };
+export type ClientMessage =
+  | { type: 'submit'; actions: SubmittedAction[] }
+  | { type: 'chat'; text: string }
+  /** Relay seats: the outside AI's raw reply, parsed by the server. */
+  | { type: 'relay'; text: string };
