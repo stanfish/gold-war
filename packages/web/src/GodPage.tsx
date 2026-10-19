@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { PLAYERS, type GameState, type GodUpdate, type Orders, type PlayerId, type SubmittedAction } from '@gold-war/engine';
+import { PLAYERS, type GameState, type GodUpdate, type Orders, type PlayerId, type RoundEvent, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
 import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
 
@@ -153,15 +153,8 @@ export function GodPage({ k }: { k: string | null }) {
           </section>
 
           <section>
-            <h3>Mines</h3>
-            <div className="small">
-              {state.mines.map((m) => (
-                <div key={m.id}>
-                  {m.id} ({m.x},{m.y}) pays {m.payout} · known by{' '}
-                  {PLAYERS.filter((p) => state.players[p].knownMines[m.id] !== undefined).join(', ') || 'nobody'}
-                </div>
-              ))}
-            </div>
+            <h3>Mines &amp; payouts</h3>
+            <GodMinesPayout state={state} lastRound={msg.history.at(-1)?.round ?? null} events={msg.history.at(-1)?.events ?? []} />
           </section>
         </aside>
       </main>
@@ -199,6 +192,95 @@ function OrdersList(props: { player: PlayerId; orders: Orders | undefined; state
           {a.worker_id}: {describeOrder(a, player, props.state)}
         </div>
       ))}
+    </div>
+  );
+}
+
+/** All mines (god sees through fog) + last round's collects per seat, like the player view's table. */
+function GodMinesPayout({ state, events, lastRound }: { state: GameState; events: RoundEvent[]; lastRound: number | null }) {
+  const sum = (p: PlayerId, type: 'cost' | 'income') =>
+    events.reduce((s, e) => s + (e.type === type && e.player === p ? e.amount : 0), 0);
+  const collects = new Map<string, Extract<RoundEvent, { type: 'collect' }>>();
+  for (const e of events) if (e.type === 'collect') collects.set(e.mineId, e);
+  const knownBy = (id: string) => PLAYERS.filter((p) => state.players[p].knownMines[id] !== undefined);
+  // Discovered by most seats first, then best payout.
+  const mines = [...state.mines].sort(
+    (a, b) => knownBy(b.id).length - knownBy(a.id).length || b.payout - a.payout || a.id.localeCompare(b.id, undefined, { numeric: true }),
+  );
+  const cell = (c: Extract<RoundEvent, { type: 'collect' }> | undefined, p: PlayerId) =>
+    c && c.workers[p] > 0 ? (
+      <>
+        <b className={c.gained[p] > 0 ? 'gold' : ''}>+{c.gained[p]}</b> <span className="muted">({c.workers[p]}w)</span>
+      </>
+    ) : (
+      <span className="muted">—</span>
+    );
+
+  return (
+    <div className="small">
+      {lastRound !== null && (
+        <div className="summary">
+          {PLAYERS.map((p) => {
+            const paid = sum(p, 'cost');
+            const earned = sum(p, 'income');
+            const net = earned - paid;
+            const deleted = events.filter((e) => e.type === 'delete' && e.player === p).length;
+            return (
+              <div key={p} style={{ color: PLAYER_COLORS[p] }}>
+                <b>{p.toUpperCase()}</b> (round {lastRound}): paid {paid}, earned {earned} → {net >= 0 ? '+' : ''}
+                {net}
+                {deleted > 0 && `, deleted ${deleted} worker${deleted > 1 ? 's' : ''}`}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <table className="mines">
+        <thead>
+          <tr>
+            <th>Mine</th>
+            <th>Pays</th>
+            <th>Where</th>
+            <th>Known by</th>
+            {PLAYERS.map((p) => (
+              <th key={p} style={{ color: PLAYER_COLORS[p] }}>
+                {p.toUpperCase()}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {mines.map((m) => {
+            const c = collects.get(m.id);
+            const by = knownBy(m.id);
+            return (
+              <tr key={m.id}>
+                <td className="gold">{m.id}</td>
+                <td>{m.payout}</td>
+                <td>
+                  ({m.x},{m.y})
+                </td>
+                <td>
+                  {by.length ? (
+                    by.map((p, i) => (
+                      <span key={p} style={{ color: PLAYER_COLORS[p] }}>
+                        {i > 0 && ', '}
+                        {p.toUpperCase()} <span className="muted">r{state.players[p].knownMines[m.id]}</span>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="muted">nobody</span>
+                  )}
+                </td>
+                {PLAYERS.map((p) => (
+                  <td key={p}>{cell(c, p)}</td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {lastRound !== null && <p className="muted">P1 / P2 = gold from that mine last round (workers sent). rN = round discovered.</p>}
     </div>
   );
 }
