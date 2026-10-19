@@ -22,6 +22,8 @@ import { GameSession, type AiFactory } from './session.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const PORT = Number(process.env.PORT ?? 8787);
+// Loopback by default; HOST=0.0.0.0 exposes the game to the LAN.
+const HOST = process.env.HOST ?? '127.0.0.1';
 const WEB_DIST = join(ROOT, 'packages/web/dist');
 
 const makeAi: AiFactory = (agent, ctx) => (agent === 'bot' ? new BotPlayer(ctx) : new HerdrAgentPlayer(agent, ctx));
@@ -139,7 +141,7 @@ app.server.on('upgrade', (req, socket, head) => {
   });
 });
 
-await app.listen({ port: PORT, host: '127.0.0.1' });
+await app.listen({ port: PORT, host: HOST });
 if (!(await herdrAvailable())) app.log.warn('herdr server not reachable: herdr-backed AI players will fail. Built-in "bot" works.');
 
 // Close agent panes/workspaces on shutdown so no orphaned agents keep running.
