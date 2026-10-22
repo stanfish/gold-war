@@ -8,3 +8,4 @@ export * from './view.js';
 export * from './briefing.js';
 export * from './bot.js';
 export * from './protocol.js';
+export * from './describe.js';

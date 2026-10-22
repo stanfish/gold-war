@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PLAYERS, type GameState, type GodUpdate, type Orders, type PlayerId, type RoundEvent, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
-import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
+import { ChatLog, Countdown, GameNumber, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
 
 export function GodPage({ k }: { k: string | null }) {
   const { msg, error, connected } = useGameSocket<GodUpdate>('god', k);
@@ -35,6 +35,7 @@ export function GodPage({ k }: { k: string | null }) {
     <div className="page game">
       <header className="topbar">
         <b>GOD VIEW</b>
+        <GameNumber n={msg.gameNumber} />
         <span>
           Round <b>{state.round}</b>/{state.settings.roundsTotal}
         </span>

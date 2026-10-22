@@ -77,3 +77,5 @@ table.mines td { padding: 3px 4px; border-bottom: 1px solid rgba(255,255,255,0.0
 .relay-text { flex: 1; min-height: 240px; max-height: none; resize: vertical; color: var(--text); }
 .relay-text.reply { min-height: 160px; }
 @media (max-width: 800px) { .relay { grid-template-columns: 1fr; } }
+.relay.final { grid-template-columns: 1fr; }
+.banner .rematch { margin-left: 12px; }

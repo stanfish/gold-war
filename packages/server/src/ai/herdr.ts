@@ -260,6 +260,16 @@ export class HerdrAgentPlayer implements AiPlayer {
     throw lastErr;
   }
 
+  async newGame(briefing: string, note: string): Promise<void> {
+    await writeFile(join(this.workdir, 'briefing.md'), briefing);
+    await this.prompt(`${note}\nbriefing.md was rewritten for this game: re-read it. Reply with just: READY`, 180_000);
+  }
+
+  async gameOver(message: string, input: AiRoundInput): Promise<void> {
+    await writeFile(join(this.workdir, 'final.json'), JSON.stringify(input, null, 2));
+    await this.prompt(`${message}\nThe full final state is in final.json. No response file needed: reply with one short line.`, 120_000);
+  }
+
   async cancel(): Promise<void> {
     await herdr(['agent', 'send-keys', this.name, 'esc'], 10_000).catch(() => {});
   }

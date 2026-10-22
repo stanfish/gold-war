@@ -108,5 +108,19 @@ ${chat ? 'Reply with ONLY this JSON (no prose, a ```json code block is fine):' :
 - MOVE needs dx/dy (|dx|+|dy| between 1 and ${s.moveRange}) or a target x/y. COLLECT needs mine_id. STAY/DELETE need nothing.
 - Give every worker exactly one action, on every turn (on a "message" turn, repeat or revise your orders).
 - Keep "notes" compact; it is your only memory between rounds.
+
+## Game over
+When the game ends you get one final message (trigger "game_over") saying whether you won, lost or drew,
+with the state after the final round (its events are in "last_round"). No orders are needed then.
 `;
+}
+
+/** Told to AI / player-with-AI seats at the start of a rematch (game 2, 3, ...). */
+export function rematchNote(gameNumber: number): string {
+  return (
+    `NEW GAME: this is a rematch (game ${gameNumber} against the same opponent, same rules and settings). ` +
+    'Use whatever you learnt in earlier games about your opponent and about strategy. But the map starts fresh: ' +
+    'mine locations and payouts are randomized again, so mine ids, coordinates and payouts from earlier games no ' +
+    'longer apply. Gold, workers and vision are reset to the start.'
+  );
 }

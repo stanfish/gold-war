@@ -96,6 +96,76 @@ describe('GameSession', () => {
     s.stop();
   });
 
+  it('game over: AI seats get a final brief, relay seats see it instead of a prompt', async () => {
+    const briefs: { message: string; input: AiRoundInput }[] = [];
+    const makeAi: AiFactory = (agent, ctx) => {
+      const bot = new BotPlayer(ctx);
+      return Object.assign(bot, { agent, gameOver: async (message: string, input: AiRoundInput) => void briefs.push({ message, input }) });
+    };
+    const s = new GameSession(
+      { settings: settings({ roundsTotal: 1 }), seats: { p1: { type: 'relay' }, p2: { type: 'ai', agent: 'fake' } }, seed: 3 },
+      { makeAi, logDir: null },
+    );
+    await s.start();
+    s.humanConnected('p1');
+    await flush();
+    expect(s.relaySubmit('p1', '{"actions":[]}')).toBeNull();
+    await flush();
+    expect(s.phase).toBe('finished');
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]!.input).toMatchObject({ trigger: 'game_over', you: 'p2', status: 'finished' });
+    expect(briefs[0]!.message).toMatch(/You (WON|LOST)|DRAW/);
+    expect(briefs[0]!.message).toContain('final round (round 1)');
+
+    const relay = s.seatUpdate('p1').relay!;
+    expect(relay.final).toBe(true);
+    expect(relay.turn).toContain('game over');
+    expect(relay.turn).toContain('"trigger": "game_over"');
+    expect(relay.turn).not.toContain('"you": "p2"');
+    s.stop();
+  });
+
+  it('rematch: same links and seats, fresh map, running AI is re-briefed (not restarted), notes carry over', async () => {
+    const calls: string[] = [];
+    const makeAi: AiFactory = (agent, ctx) =>
+      Object.assign(new BotPlayer(ctx), {
+        agent,
+        start: async () => void calls.push('start'),
+        newGame: async (_b: string, note: string) => void calls.push(`newGame:${note}`),
+        stop: async () => void calls.push('stop'),
+      });
+    const s = new GameSession(
+      { settings: settings({ roundsTotal: 1 }), seats: { p1: { type: 'relay' }, p2: { type: 'ai', agent: 'fake' } }, seed: 3 },
+      { makeAi, logDir: null },
+    );
+    expect(() => s.rematch()).toThrow(/not over/);
+    await s.start();
+    s.humanConnected('p1');
+    await flush();
+    s.relaySubmit('p1', '{"actions":[],"notes":"opponent rushes east"}');
+    await flush();
+    expect(s.phase).toBe('finished');
+
+    const r = s.rematch();
+    expect(r.id).not.toBe(s.id);
+    expect(r.keys).toEqual(s.keys);
+    expect(r.gameNumber).toBe(2);
+    expect(r.seats).toEqual(s.seats);
+    expect(r.state.seed).not.toBe(s.state.seed);
+    expect(r.state.settings).toEqual(s.state.settings);
+    await r.start();
+    r.humanConnected('p1');
+    await flush();
+    expect(calls).toEqual(['start', expect.stringMatching(/^newGame:NEW GAME: this is a rematch \(game 2/)]);
+    expect(r.seatUpdate('p1').gameNumber).toBe(2);
+    const relay = r.seatUpdate('p1').relay!;
+    expect(relay.round).toBe(1);
+    expect(relay.turn).toMatch(/^NEW GAME: this is a rematch/);
+    expect(relay.turn).toContain('opponent rushes east');
+    r.stop();
+  });
+
   it('resolves on timeout with missing actions as STAY', async () => {
     vi.useFakeTimers();
     try {

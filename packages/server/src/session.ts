@@ -7,6 +7,8 @@ import {
   aiState,
   buildPlayerBriefing,
   createGame,
+  rematchNote,
+  describeEvent,
   opponentOf,
   playerView,
   resolveRound,
@@ -35,6 +37,14 @@ export const MAX_AI_REPLIES_PER_ROUND = 2;
 const MIN_REPLY_MS = 20_000;
 
 export type AiFactory = (agent: string, ctx: AiPlayerContext) => AiPlayer;
+
+/** What a rematch takes over from the finished game: links, running AI agents and their notes. */
+export interface Carry {
+  keys: { p1?: string; p2?: string; god: string };
+  ai: Partial<Record<PlayerId, AiPlayer>>;
+  notes: Partial<Record<PlayerId, string>>;
+  gameNumber: number;
+}
 
 interface PlayerSubmission {
   actions: SubmittedAction[];
@@ -72,6 +82,7 @@ export function cleanMessage(raw: unknown): string | null {
 export class GameSession {
   readonly id = randomBytes(8).toString('hex');
   readonly keys: { p1?: string; p2?: string; god: string };
+  readonly gameNumber: number;
   readonly seats: Record<PlayerId, SeatConfig>;
   state: GameState;
   phase: Phase = 'starting';
@@ -98,22 +109,26 @@ export class GameSession {
   constructor(
     req: CreateGameRequest,
     private opts: { makeAi: AiFactory; logDir: string | null; /** Pause between rounds when no human plays, so spectators can follow. */ aiPaceMs?: number },
+    private carry?: Carry,
   ) {
+    this.gameNumber = carry?.gameNumber ?? 1;
     const seed = req.seed ?? randomBytes(4).readUInt32LE(0);
     const hasRelay = PLAYERS.some((p) => req.seats[p].type === 'relay');
     // Relay seats can't do real-time chat (each AI turn is a manual copy-paste), so table talk is off for the game.
     this.state = createGame(hasRelay ? { ...req.settings, tableTalk: false } : req.settings, seed);
     this.seats = req.seats;
     const key = () => randomBytes(12).toString('base64url');
-    this.keys = { god: key() };
+    // A rematch keeps the links, so players' open pages carry straight on into the new game.
+    this.keys = carry ? { ...carry.keys } : { god: key() };
     for (const p of PLAYERS) {
       const seat = req.seats[p];
-      if (seat.type !== 'ai') this.keys[p] = key();
-      if (seat.type === 'relay') this.relay[p] = { agent: 'player with AI', status: 'ready', notes: '', thinking: {}, lastError: null };
+      const notes = carry?.notes[p] ?? '';
+      if (seat.type !== 'ai' && !carry) this.keys[p] = key();
+      if (seat.type === 'relay') this.relay[p] = { agent: 'player with AI', status: 'ready', notes, thinking: {}, lastError: null };
       if (seat.type === 'ai')
         this.ai[p] = {
-          player: opts.makeAi(seat.agent, { gameId: this.id, player: p, seed }),
-          panel: { agent: seat.agent, status: 'booting', notes: '', thinking: {}, lastError: null },
+          player: carry?.ai[p] ?? opts.makeAi(seat.agent, { gameId: this.id, player: p, seed }),
+          panel: { agent: seat.agent, status: 'booting', notes, thinking: {}, lastError: null },
         };
     }
   }
@@ -135,8 +150,13 @@ export class GameSession {
     const boots = PLAYERS.flatMap((p) => {
       const a = this.ai[p];
       if (!a) return [];
+      const briefing = buildPlayerBriefing(this.state.settings, p);
+      // Rematch: the agent is already running and keeps what it learnt; just tell it a new game begins.
+      const boot = this.carry?.ai[p]
+        ? (a.player.newGame?.(briefing, rematchNote(this.gameNumber)) ?? Promise.resolve())
+        : a.player.start(briefing);
       return [
-        a.player.start(buildPlayerBriefing(this.state.settings, p)).then(
+        boot.then(
           () => {
             a.panel.status = 'ready';
             this.emit();
@@ -195,7 +215,7 @@ export class GameSession {
     this.emit();
   }
 
-  private aiInput(p: PlayerId, trigger: 'round' | 'message'): AiRoundInput {
+  private aiInput(p: PlayerId, trigger: AiRoundInput['trigger']): AiRoundInput {
     const last = this.history.at(-1);
     return {
       ...aiState(this.state, p),
@@ -207,10 +227,48 @@ export class GameSession {
     };
   }
 
+  /**
+   * Final brief for one seat: the result in plain words, a short account of the final round, and the state
+   * after it as JSON (same fog-filtered view as every round).
+   */
+  private finalBrief(p: PlayerId): { message: string; input: AiRoundInput } {
+    const input = this.aiInput(p, 'game_over');
+    const result = this.state.result;
+    const opp = opponentOf(p);
+    const outcome = !result ? 'The game ended' : result.winner === null ? 'It is a DRAW' : result.winner === p ? 'You WON' : 'You LOST';
+    const lines = (input.last_round?.events ?? []).map((e) => describeEvent(e, p));
+    const message =
+      `# Gold War — game over\n\n` +
+      `${outcome}${result ? ` (${result.reason})` : ''}. Final gold: you ${input.gold}, opponent ${input.opponent.gold}. ` +
+      `Workers left: you ${input.workers.length}, opponent ${input.opponent.workers}.\n\n` +
+      `What happened in the final round (round ${this.state.round}), from your (${p}) side:\n` +
+      (lines.length ? lines.map((l) => `- ${l}`).join('\n') : '- nothing visible to you') +
+      `\n\nFinal state:\n\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n` +
+      `No orders needed: the game is finished. Thanks for playing against ${opp}.`;
+    return { message, input };
+  }
+
+  /** Tell AI seats how the game ended (relay seats see the same brief on their page). */
+  private briefGameOver(): void {
+    for (const p of PLAYERS) {
+      const a = this.ai[p];
+      if (!a?.player.gameOver) continue;
+      const { message, input } = this.finalBrief(p);
+      a.player.gameOver(message, input).catch((e: Error) => {
+        a.panel.lastError = `final brief: ${e.message}`;
+        this.emit();
+      });
+    }
+  }
+
   /** Relay seat's copy-paste prompt for the open round (same state an AI seat would get). */
   private relayPrompt(p: PlayerId): RelayPrompt {
+    if (this.state.status === 'finished') {
+      return { round: this.state.round, briefing: '', turn: this.finalBrief(p).message, lastError: null, final: true };
+    }
     const input = this.aiInput(p, 'round');
     const turn =
+      (this.gameNumber > 1 && input.round === 1 ? `${rematchNote(this.gameNumber)}\n\n` : '') +
       `# Gold War — round ${input.round} of ${input.rounds_total}\n\n` +
       `Game state for this round:\n\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n\n` +
       'Decide your orders and reply with ONLY the response JSON in the briefing format. Give every worker exactly one action ' +
@@ -220,6 +278,7 @@ export class GameSession {
       briefing: buildPlayerBriefing(this.state.settings, p, 'chat'),
       turn,
       lastError: this.relay[p]?.lastError ?? null,
+      final: false,
     };
   }
 
@@ -378,6 +437,7 @@ export class GameSession {
     if (state.status === 'finished') {
       this.phase = 'finished';
       this.phaseDetail = state.result?.reason ?? null;
+      this.briefGameOver();
       this.emit();
       return;
     }
@@ -397,6 +457,7 @@ export class GameSession {
   private base() {
     return {
       gameId: this.id,
+      gameNumber: this.gameNumber,
       rulesVersion: RULES_VERSION,
       phase: this.phase,
       phaseDetail: this.phaseDetail,
@@ -435,12 +496,32 @@ export class GameSession {
   }
 
   async stop(): Promise<void> {
+    this.detach();
+    await Promise.all(PLAYERS.map((p) => this.ai[p]?.player.stop()));
+  }
+
+  private detach(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.roundToken++;
     this.aiBusy.clear();
     this.listeners.clear();
-    await Promise.all(PLAYERS.map((p) => this.ai[p]?.player.stop()));
+  }
+
+  /**
+   * New game with the same seats and settings (fresh map, new seed), keeping links, AI agents and their notes.
+   * Only after game over. The caller starts the returned session.
+   */
+  rematch(): GameSession {
+    if (this.phase !== 'finished') throw new Error('the game is not over yet');
+    this.detach();
+    const carry: Carry = { keys: this.keys, ai: {}, notes: {}, gameNumber: this.gameNumber + 1 };
+    for (const p of PLAYERS) {
+      const a = this.ai[p];
+      if (a) carry.ai[p] = a.player;
+      carry.notes[p] = (a?.panel ?? this.relay[p])?.notes ?? '';
+    }
+    return new GameSession({ settings: this.state.settings, seats: this.seats }, this.opts, carry);
   }
 
   private async persist(): Promise<void> {

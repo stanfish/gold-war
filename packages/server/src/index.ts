@@ -66,16 +66,33 @@ app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
     const seat = body.seats[p];
     if (seat.type === 'ai') seat.label = seat.agent === 'bot' ? 'bot' : (findPreset(seat.agent)?.label ?? seat.agent);
   }
-  const s = new GameSession(body, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 1500 });
-  session = s;
-  s.onChange(() => broadcast(s));
-  void s.start();
+  const s = launch(new GameSession(body, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 1500 }));
 
   const res: CreateGameResponse = { gameId: s.id, links: { god: `/god?k=${s.keys.god}` } };
   if (s.keys.p1) res.links.p1 = `/player1?k=${s.keys.p1}`;
   if (s.keys.p2) res.links.p2 = `/player2?k=${s.keys.p2}`;
   return res;
 });
+
+function launch(s: GameSession): GameSession {
+  session = s;
+  s.onChange(() => broadcast(s));
+  void s.start();
+  return s;
+}
+
+/** Rematch: same seats/settings/links. Open pages (seats and GOD) follow along to the new game. */
+function rematch(old: GameSession): string | null {
+  // Both players may click at once: the second click lands on the new game, which has not started yet.
+  if (old.phase === 'starting' || old.phase === 'waiting') return null;
+  if (old.phase !== 'finished') return 'the game is not over yet';
+  const s = old.rematch();
+  for (const c of clients.values()) if (c.gameId === old.id) c.gameId = s.id;
+  launch(s);
+  for (const c of clients.values()) if (c.gameId === s.id && c.role !== 'god') s.humanConnected(c.role);
+  broadcast(s);
+  return null;
+}
 
 if (existsSync(WEB_DIST)) {
   await app.register(fastifyStatic, { root: WEB_DIST });
@@ -122,11 +139,13 @@ app.server.on('upgrade', (req, socket, head) => {
       ws.close();
       return;
     }
-    const { role, session: s } = auth;
-    clients.set(ws, { role, gameId: s.id });
+    const { role, session: s0 } = auth;
+    clients.set(ws, { role, gameId: s0.id });
     ws.on('close', () => clients.delete(ws));
     ws.on('message', (data) => {
-      if (role === 'god' || session !== s) return;
+      // The socket follows rematches, so act on the game it is attached to now (only if that is the live one).
+      const s = session && clients.get(ws)?.gameId === session.id ? session : null;
+      if (role === 'god' || !s) return;
       let msg: ClientMessage;
       try {
         msg = JSON.parse(String(data)) as ClientMessage;
@@ -140,11 +159,15 @@ app.server.on('upgrade', (req, socket, head) => {
             ? s.postChat(role, msg.text)
             : msg.type === 'relay'
               ? s.relaySubmit(role, msg.text)
-              : 'unknown message';
+              : msg.type === 'rematch'
+                ? s.seats[role].type === 'ai'
+                  ? 'AI seats cannot ask for a rematch'
+                  : rematch(s)
+                : 'unknown message';
       if (err) send(ws, { type: 'error', message: err });
     });
-    send(ws, updateFor(s, role));
-    if (role !== 'god') s.humanConnected(role);
+    send(ws, updateFor(s0, role));
+    if (role !== 'god') s0.humanConnected(role);
   });
 });
 

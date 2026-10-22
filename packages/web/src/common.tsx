@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatEntry, ClientMessage, PlayerId, RoundEvent, SeatConfig, ServerMessage } from '@gold-war/engine';
+import type { ChatEntry, ClientMessage, PlayerId, SeatConfig, ServerMessage } from '@gold-war/engine';
 
 export const PLAYER_COLORS: Record<PlayerId, string> = { p1: '#4da3ff', p2: '#ff6b6b' };
 
@@ -84,28 +84,26 @@ export function ChatLog({ chat, me }: { chat: ChatEntry[]; me?: PlayerId }) {
   );
 }
 
-export function describeEvent(e: RoundEvent, me?: PlayerId): string {
-  const who = (p: PlayerId) => (p === me ? 'you' : p);
-  switch (e.type) {
-    case 'missing':
-      return `${who(e.player)} ${e.workerId}: no action → STAY`;
-    case 'invalid':
-      return `${who(e.player)} ${e.workerId}: invalid (${e.reason}) → STAY`;
-    case 'downgrade':
-      return `${who(e.player)} ${e.workerId}: unaffordable ${e.from} → ${e.to}`;
-    case 'move':
-      return `${who(e.player)} ${e.workerId}: (${e.from.x},${e.from.y}) → (${e.to.x},${e.to.y})`;
-    case 'collect':
-      return `${e.mineId} (${e.payout}): p1×${e.workers.p1} vs p2×${e.workers.p2} → p1 +${e.gained.p1}, p2 +${e.gained.p2}`;
-    case 'delete':
-      return `${who(e.player)} ${e.workerId}: deleted`;
-    case 'discover':
-      return `${who(e.player)} discovered ${e.mineId}`;
-    case 'cost':
-      return `${who(e.player)} paid ${e.amount} gold`;
-    case 'income':
-      return `${who(e.player)} earned ${e.amount} gold`;
-    case 'end':
-      return `GAME OVER: ${e.result.winner ? `${who(e.result.winner)} wins` : 'draw'} (${e.result.reason})`;
-  }
+/** After game over: new game with the same seats and settings. Pages stay open and switch to it. */
+export function RematchButton({ send }: { send: (m: ClientMessage) => void }) {
+  const [asked, setAsked] = useState(false);
+  return (
+    <button
+      className="primary rematch"
+      disabled={asked}
+      onClick={() => {
+        setAsked(true);
+        send({ type: 'rematch' });
+      }}
+    >
+      {asked ? 'Starting rematch…' : 'Rematch'}
+    </button>
+  );
 }
+
+/** "Game N" tag for rematches. */
+export function GameNumber({ n }: { n: number }) {
+  return n > 1 ? <span className="muted">Game {n}</span> : null;
+}
+
+export { describeEvent } from '@gold-war/engine';

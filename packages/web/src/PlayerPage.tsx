@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RULES_VERSION, moveError, visibleCells, type PlayerId, type SeatUpdate, type SubmittedAction } from '@gold-war/engine';
 import { MapCanvas, type MapUnit } from './MapCanvas';
 import { RelayPage } from './RelayPage';
-import { ChatLog, Countdown, PLAYER_COLORS, describeEvent, seatLabel, useGameSocket } from './common';
+import { ChatLog, Countdown, GameNumber, PLAYER_COLORS, RematchButton, describeEvent, seatLabel, useGameSocket } from './common';
 import type { RoundEvent } from '@gold-war/engine';
 
 type Draft = { action: 'MOVE'; dx: number; dy: number } | { action: 'COLLECT'; mine_id: string } | { action: 'STAY' } | { action: 'DELETE' };
@@ -130,6 +130,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
     <div className="page game">
       <header className="topbar">
         <b style={{ color: PLAYER_COLORS[seat] }}>{seatLabel(seat, msg.seats[seat])}</b>
+        <GameNumber n={msg.gameNumber} />
         <span>
           Round <b>{view.round}</b>/{view.rounds_total}
         </span>
@@ -148,6 +149,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
       {view.result && (
         <div className="banner">
           {view.result.winner ? (view.result.winner === seat ? '🏆 You win' : 'You lose') : 'Draw'} — {view.result.reason}
+          {msg.phase === 'finished' && <RematchButton key={msg.gameId} send={send} />}
         </div>
       )}
       {msg.phase === 'waiting' || msg.phase === 'starting' ? <div className="banner muted">{msg.phaseDetail}</div> : null}

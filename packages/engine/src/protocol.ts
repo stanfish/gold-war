@@ -50,6 +50,8 @@ export interface CreateGameResponse {
 
 interface UpdateBase {
   gameId: string;
+  /** 1 for a fresh game, 2+ for rematches against the same opponent. */
+  gameNumber: number;
   /** Server's RULES_VERSION; the UI refuses to submit when it differs from its own. */
   rulesVersion: number;
   phase: Phase;
@@ -82,6 +84,8 @@ export interface RelayPrompt {
   turn: string;
   /** Error from the last pasted reply, if it could not be used. */
   lastError: string | null;
+  /** Game over: `turn` is the final brief (result + final round); nothing to paste back. */
+  final: boolean;
 }
 
 export interface Orders {
@@ -103,4 +107,6 @@ export type ClientMessage =
   | { type: 'submit'; actions: SubmittedAction[] }
   | { type: 'chat'; text: string }
   /** Relay seats: the outside AI's raw reply, parsed by the server. */
-  | { type: 'relay'; text: string };
+  | { type: 'relay'; text: string }
+  /** After game over (seats that are not AI): new game, same seats and settings. */
+  | { type: 'rematch' };
