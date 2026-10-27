@@ -17,7 +17,7 @@ import { inBounds, seenBy, visibleCells } from './vision.js';
  * Bump whenever action validation or resolution rules change. Clients compare it with the server's
  * so a stale server never silently rejects moves the UI allowed.
  */
-export const RULES_VERSION = 4;
+export const RULES_VERSION = 5;
 
 /**
  * Why a MOVE by (dx, dy) is illegal, or null if it is legal. Shared by the engine and the player UI.
@@ -85,14 +85,15 @@ export function validateAction(state: GameState, player: PlayerId, worker: Worke
 export function updateVision(state: GameState, player: PlayerId, round: number, events: RoundEvent[]): void {
   const ps = state.players[player];
   const n = state.settings.mapSize;
-  for (const cell of visibleCells(n, ps.workers)) ps.explored[cell] = 1;
+  const r = state.settings.visionRadius;
+  for (const cell of visibleCells(n, ps.workers, r)) ps.explored[cell] = 1;
   for (const m of state.mines) {
-    if (ps.knownMines[m.id] === undefined && seenBy(ps.workers, m)) {
+    if (ps.knownMines[m.id] === undefined && seenBy(ps.workers, m, r)) {
       ps.knownMines[m.id] = round;
       if (round > 0) events.push({ type: 'discover', player, mineId: m.id });
     }
   }
-  const enemies = state.players[opponentOf(player)].workers.filter((w) => seenBy(ps.workers, w));
+  const enemies = state.players[opponentOf(player)].workers.filter((w) => seenBy(ps.workers, w, r));
   if (enemies.length) ps.enemySightings = enemies.map((w) => ({ x: w.x, y: w.y, round }));
 }
 
@@ -197,6 +198,7 @@ export function resolveRound(
 
   // 5. Collects: per mine, majority takes all, tie splits. Collectors return to base.
   const collectors = new Map<string, Record<PlayerId, number>>();
+  const collectorIds = new Map<string, Record<PlayerId, string[]>>();
   for (const p of PLAYERS) {
     for (const w of state.players[p].workers) {
       const a = plan[p].get(w.id)!;
@@ -204,6 +206,9 @@ export function resolveRound(
       const c = collectors.get(a.mineId) ?? { p1: 0, p2: 0 };
       c[p]++;
       collectors.set(a.mineId, c);
+      const ids = collectorIds.get(a.mineId) ?? { p1: [], p2: [] };
+      ids[p].push(w.id);
+      collectorIds.set(a.mineId, ids);
       w.x = state.base.x;
       w.y = state.base.y;
     }
@@ -226,6 +231,7 @@ export function resolveRound(
       payout: mine.payout,
       workers: { ...c },
       gained: { p1: gained2.p1 / 2, p2: gained2.p2 / 2 },
+      collectors: collectorIds.get(mine.id)!,
     });
   }
 

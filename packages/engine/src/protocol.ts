@@ -1,5 +1,5 @@
 /** Wire types shared by server and web. Types only — no runtime code. */
-import type { GameState, PlayerId, RoundEvent, Settings, SubmittedAction } from './types.js';
+import type { GameState, PlayerId, RoundEvent, Settings, SubmittedAction, Worker } from './types.js';
 import type { PlayerView } from './view.js';
 
 /** 'bot' = built-in scripted player; anything else is a herdr agent kind (claude, codex, grok, ...). */
@@ -92,12 +92,20 @@ export interface Orders {
   actions: SubmittedAction[];
 }
 
+/** Board state at one point in time (GOD replay): before round 1, or after a round resolved. */
+export interface Snapshot {
+  players: Record<PlayerId, { gold: number; workers: Worker[]; knownMines: string[] }>;
+}
+
 export interface GodUpdate extends UpdateBase {
   type: 'god';
   state: GameState;
   /** Orders submitted so far in the open round (latest version per player). */
   pending: Partial<Record<PlayerId, Orders>>;
-  history: { round: number; events: RoundEvent[]; submissions: Partial<Record<PlayerId, Orders>> }[];
+  /** Board before round 1. */
+  start: Snapshot;
+  /** `snapshot` = board after that round resolved. */
+  history: { round: number; events: RoundEvent[]; submissions: Partial<Record<PlayerId, Orders>>; snapshot: Snapshot }[];
   ai: Partial<Record<PlayerId, AiPanel>>;
 }
 
@@ -108,5 +116,5 @@ export type ClientMessage =
   | { type: 'chat'; text: string }
   /** Relay seats: the outside AI's raw reply, parsed by the server. */
   | { type: 'relay'; text: string }
-  /** After game over (seats that are not AI): new game, same seats and settings. */
+  /** After game over (GOD view, or seats that are not AI): new game, same seats and settings. */
   | { type: 'rematch' };

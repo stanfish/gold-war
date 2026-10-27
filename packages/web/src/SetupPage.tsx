@@ -117,7 +117,7 @@ export function SetupPage() {
             value={settings.mapSize}
             onChange={(e) => {
               const size = Number(e.target.value);
-              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer, payoutMin: settings.payoutMin, payoutMax: settings.payoutMax, roundsTotal: settings.roundsTotal });
+              setSettings({ ...defaultSettings(size), roundSeconds: settings.roundSeconds, visionRadius: Math.min(settings.visionRadius, Math.floor(size / 2)), tableTalk: settings.tableTalk, fullRoundTimer: settings.fullRoundTimer, payoutMin: settings.payoutMin, payoutMax: settings.payoutMax, roundsTotal: settings.roundsTotal });
             }}
           >
             <option value={30}>30×30 (quick)</option>
@@ -137,6 +137,13 @@ export function SetupPage() {
         <label>
           Move range: <b>{settings.moveRange}</b>
           <input type="range" min={1} max={Math.floor(settings.mapSize / 3)} value={settings.moveRange} onChange={(e) => set({ moveRange: Number(e.target.value) })} />
+        </label>
+        <label>
+          Worker vision radius: <b>{settings.visionRadius}</b>{' '}
+          <span className="muted small">
+            (each worker sees {2 * settings.visionRadius + 1}×{2 * settings.visionRadius + 1} squares)
+          </span>
+          <input type="range" min={0} max={Math.min(10, Math.floor(settings.mapSize / 2))} value={settings.visionRadius} onChange={(e) => set({ visionRadius: Number(e.target.value) })} />
         </label>
         <div className="field">
           Gold mine payout (gold per round, random per mine)

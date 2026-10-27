@@ -44,7 +44,7 @@ Each round both players act simultaneously. Every worker gets exactly 1 action:
 | DELETE  | 0 gold   | Remove the worker for the rest of the game. |
 
 - Costs are paid every round. Gold may be fractional (0.5 steps).
-- Vision: each worker sees a 5x5 area centered on itself (2 squares each way), computed from its position
+- Vision: each worker sees a ${2 * s.visionRadius + 1}x${2 * s.visionRadius + 1} area centered on itself (${s.visionRadius} square${s.visionRadius === 1 ? '' : 's'} each way), computed from its position
   AFTER the round's moves/collects. Squares passed through during a MOVE are not seen.
 - Mines are permanent once seen. A mine first seen at the end of round N can be collected from round N+1
   (state marks this as "collectable").
@@ -78,7 +78,7 @@ ${chat ? 'Each round\'s message contains the state JSON, shaped like:' : 'You wi
   "visible_enemy_workers": [{"x": 20, "y": 11}],
   "enemy_last_seen": [{"x": 20, "y": 11, "round": 6}],
   "opponent": {"gold": 21.0, "workers": 5},
-  "settings": {"map_size": ${s.mapSize}, "move_range": ${s.moveRange}, "round_seconds": ${s.roundSeconds}, "table_talk": ${s.tableTalk}},
+  "settings": {"map_size": ${s.mapSize}, "move_range": ${s.moveRange}, "vision_radius": ${s.visionRadius}, "round_seconds": ${s.roundSeconds}, "table_talk": ${s.tableTalk}},
   "status": "active", "result": null,
   "trigger": "round",
   "last_round": {"events": ["..."]},

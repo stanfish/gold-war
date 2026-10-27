@@ -9,6 +9,8 @@ export interface Settings {
   mapSize: number;
   mineCount: number;
   moveRange: number;
+  /** Squares a worker sees in each direction: a (2r+1)x(2r+1) area. */
+  visionRadius: number;
   roundSeconds: number;
   tableTalk: boolean;
   /** true: every round lasts the full timer even when both players submitted early. */
@@ -102,6 +104,8 @@ export type RoundEvent =
       payout: number;
       workers: Record<PlayerId, number>;
       gained: Record<PlayerId, number>;
+      /** Worker ids that collected (GOD view replay only; stripped from seat views). */
+      collectors?: Record<PlayerId, string[]>;
     }
   | { type: 'delete'; player: PlayerId; workerId: string }
   | { type: 'discover'; player: PlayerId; mineId: string }

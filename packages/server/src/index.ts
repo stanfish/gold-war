@@ -66,7 +66,8 @@ app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
     const seat = body.seats[p];
     if (seat.type === 'ai') seat.label = seat.agent === 'bot' ? 'bot' : (findPreset(seat.agent)?.label ?? seat.agent);
   }
-  const s = launch(new GameSession(body, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 1500 }));
+  // aiPaceMs: pause between AI-only rounds, long enough for the GOD view to play each round's animation.
+  const s = launch(new GameSession(body, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 3500 }));
 
   const res: CreateGameResponse = { gameId: s.id, links: { god: `/god?k=${s.keys.god}` } };
   if (s.keys.p1) res.links.p1 = `/player1?k=${s.keys.p1}`;
@@ -145,12 +146,18 @@ app.server.on('upgrade', (req, socket, head) => {
     ws.on('message', (data) => {
       // The socket follows rematches, so act on the game it is attached to now (only if that is the live one).
       const s = session && clients.get(ws)?.gameId === session.id ? session : null;
-      if (role === 'god' || !s) return;
+      if (!s) return;
       let msg: ClientMessage;
       try {
         msg = JSON.parse(String(data)) as ClientMessage;
       } catch {
         return send(ws, { type: 'error', message: 'bad JSON' });
+      }
+      // GOD view only watches, except that it may start a rematch.
+      if (role === 'god') {
+        const err = msg.type === 'rematch' ? rematch(s) : null;
+        if (err) send(ws, { type: 'error', message: err });
+        return;
       }
       const err =
         msg.type === 'submit'

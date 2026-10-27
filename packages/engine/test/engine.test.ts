@@ -7,6 +7,7 @@ import {
   moveError,
   playerView,
   resolveRound,
+  validateSettings,
   type GameState,
   type Submission,
   type SubmittedAction,
@@ -55,6 +56,15 @@ describe('setup', () => {
     expect(g.players.p1.workers).toHaveLength(5);
     expect(g.players.p1.gold2).toBe(40);
     expect(g.players.p1.explored.reduce((a, b) => a + b, 0)).toBe(25);
+  });
+
+  it('vision radius setting sets the seen square', () => {
+    const g = createGame({ ...defaultSettings(30), visionRadius: 3 }, 7);
+    expect(g.players.p1.explored.reduce((a, b) => a + b, 0)).toBe(49);
+    const blind = createGame({ ...defaultSettings(30), visionRadius: 0 }, 7);
+    expect(blind.players.p1.explored.reduce((a, b) => a + b, 0)).toBe(1);
+    expect(validateSettings({ ...defaultSettings(30), visionRadius: 16 })).toHaveLength(1);
+    expect(buildPlayerBriefing({ ...defaultSettings(30), visionRadius: 3 }, 'p1')).toContain('7x7 area');
   });
 
   it('base on even size is floor(N/2)', () => {

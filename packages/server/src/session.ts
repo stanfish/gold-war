@@ -23,6 +23,7 @@ import {
   type RoundEvent,
   type SeatConfig,
   type SeatUpdate,
+  type Snapshot,
   type SubmittedAction,
 } from '@gold-war/engine';
 import { parseAiResponse, type AiResponse } from './ai/parse.js';
@@ -54,6 +55,15 @@ interface RoundRecord {
   round: number;
   submissions: Partial<Record<PlayerId, PlayerSubmission>>;
   events: RoundEvent[];
+  snapshot: Snapshot;
+}
+
+function snapshot(state: GameState): Snapshot {
+  const of = (p: PlayerId) => {
+    const ps = state.players[p];
+    return { gold: ps.gold2 / 2, workers: ps.workers.map((w) => ({ ...w })), knownMines: Object.keys(ps.knownMines) };
+  };
+  return { players: { p1: of('p1'), p2: of('p2') } };
 }
 
 /**
@@ -64,11 +74,17 @@ interface RoundRecord {
 const OPPONENT_PUBLIC = new Set<RoundEvent['type']>(['cost', 'income', 'delete']);
 
 export function eventsFor(events: RoundEvent[], player: PlayerId): RoundEvent[] {
-  return events.filter((e) => {
-    if (e.type === 'end') return true;
-    if (e.type === 'collect') return true;
-    return e.player === player || OPPONENT_PUBLIC.has(e.type);
-  });
+  return events
+    .filter((e) => {
+      if (e.type === 'end') return true;
+      if (e.type === 'collect') return true;
+      return e.player === player || OPPONENT_PUBLIC.has(e.type);
+    })
+    .map((e) => {
+      if (e.type !== 'collect') return e;
+      const { collectors: _hidden, ...rest } = e;
+      return rest;
+    });
 }
 
 /** Trimmed, length-capped message text, or null if empty / not a string. */
@@ -94,6 +110,7 @@ export class GameSession {
   private submissions: Partial<Record<PlayerId, PlayerSubmission>> = {};
   private chat: ChatEntry[] = [];
   private history: RoundRecord[] = [];
+  private startSnapshot: Snapshot;
   private connected = new Set<PlayerId>();
   private ai: Partial<Record<PlayerId, { player: AiPlayer; panel: AiPanel }>> = {};
   /** Relay seats ("player with AI"): same panel as an AI so the GOD view shows notes/rationale. */
@@ -117,6 +134,7 @@ export class GameSession {
     // Relay seats can't do real-time chat (each AI turn is a manual copy-paste), so table talk is off for the game.
     this.state = createGame(hasRelay ? { ...req.settings, tableTalk: false } : req.settings, seed);
     this.seats = req.seats;
+    this.startSnapshot = snapshot(this.state);
     const key = () => randomBytes(12).toString('base64url');
     // A rematch keeps the links, so players' open pages carry straight on into the new game.
     this.keys = carry ? { ...carry.keys } : { god: key() };
@@ -429,7 +447,7 @@ export class GameSession {
     const subs = this.submissions;
     const { state, events } = resolveRound(this.state, subs);
     this.state = state;
-    this.history.push({ round, submissions: subs, events });
+    this.history.push({ round, submissions: subs, events, snapshot: snapshot(state) });
     this.submissions = {};
     this.deadline = null;
     void this.persist();
@@ -490,7 +508,8 @@ export class GameSession {
       type: 'god',
       state: this.state,
       pending: this.submissions,
-      history: this.history.map((h) => ({ round: h.round, events: h.events, submissions: h.submissions })),
+      start: this.startSnapshot,
+      history: this.history.map((h) => ({ round: h.round, events: h.events, submissions: h.submissions, snapshot: h.snapshot })),
       ai,
     };
   }

@@ -1,4 +1,5 @@
 import type { Settings } from './types.js';
+import { DEFAULT_VISION_RADIUS } from './vision.js';
 
 export const MAP_SIZES = [30, 60] as const;
 export const ROUND_SECONDS_OPTIONS = [60, 120, 180] as const;
@@ -21,6 +22,7 @@ export function defaultSettings(mapSize = 30): Settings {
     mapSize,
     mineCount: d.mineCount,
     moveRange: d.moveRange,
+    visionRadius: DEFAULT_VISION_RADIUS,
     roundSeconds: 120,
     tableTalk: false,
     fullRoundTimer: true,
@@ -40,6 +42,8 @@ export function validateSettings(s: Settings): string[] {
   if (!int(s.mineCount) || s.mineCount < 1 || s.mineCount > s.mapSize * s.mapSize - 1)
     errs.push('mineCount must be 1..(squares - 1)');
   if (!int(s.moveRange) || s.moveRange < 1 || s.moveRange >= s.mapSize) errs.push('moveRange must be 1..mapSize-1');
+  if (!int(s.visionRadius) || s.visionRadius < 0 || s.visionRadius > Math.floor(s.mapSize / 2))
+    errs.push('visionRadius must be an integer 0..mapSize/2');
   if (!int(s.roundSeconds) || s.roundSeconds < 5) errs.push('roundSeconds must be >= 5');
   if (!int(s.roundsTotal) || s.roundsTotal < 1) errs.push('roundsTotal must be >= 1');
   if (!int(s.payoutMin) || !int(s.payoutMax) || s.payoutMin < 1 || s.payoutMax < s.payoutMin || s.payoutMax > 100)

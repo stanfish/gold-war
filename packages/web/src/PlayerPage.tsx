@@ -33,7 +33,7 @@ export function PlayerPage({ seat, k }: { seat: PlayerId; k: string | null }) {
 
   const view = msg?.view;
   const n = view?.settings.map_size ?? 30;
-  const visible = useMemo(() => (view ? visibleCells(n, view.workers) : new Set<number>()), [view, n]);
+  const visible = useMemo(() => (view ? visibleCells(n, view.workers, view.settings.vision_radius) : new Set<number>()), [view, n]);
   const selWorker = view?.workers.find((w) => w.id === selected);
 
   const moveTargets = useMemo(() => {

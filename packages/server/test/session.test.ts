@@ -166,6 +166,26 @@ describe('GameSession', () => {
     r.stop();
   });
 
+  it('GOD history has per-round snapshots and collector ids; seat views never get collector ids', async () => {
+    const s = new GameSession(
+      { settings: settings({ roundsTotal: 6 }), seats: { p1: { type: 'ai', agent: 'bot' }, p2: { type: 'ai', agent: 'bot' } }, seed: 5 },
+      { makeAi: bots, logDir: null },
+    );
+    await s.start();
+    for (let i = 0; i < 100 && s.phase !== 'finished'; i++) await flush();
+    const god = s.godUpdate();
+    expect(god.start.players.p1.workers).toHaveLength(5);
+    expect(god.start.players.p1.gold).toBe(20);
+    const last = god.history.at(-1)!;
+    expect(last.snapshot.players.p1.gold).toBe(s.state.players.p1.gold2 / 2);
+    expect(last.snapshot.players.p2.workers).toEqual(s.state.players.p2.workers);
+    const collects = god.history.flatMap((h) => h.events).filter((e) => e.type === 'collect');
+    expect(collects.length).toBeGreaterThan(0);
+    for (const c of collects) if (c.type === 'collect') expect(c.collectors!.p1.length + c.collectors!.p2.length).toBe(c.workers.p1 + c.workers.p2);
+    for (const e of eventsFor(last.events, 'p1')) expect(e).not.toHaveProperty('collectors');
+    s.stop();
+  });
+
   it('resolves on timeout with missing actions as STAY', async () => {
     vi.useFakeTimers();
     try {

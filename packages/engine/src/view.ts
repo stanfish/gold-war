@@ -14,7 +14,7 @@ export interface AiState {
   /** Last sighting of enemy workers, possibly stale (round says when). */
   enemy_last_seen: Sighting[];
   opponent: { gold: number; workers: number };
-  settings: { map_size: number; move_range: number; round_seconds: number; table_talk: boolean; full_round_timer: boolean };
+  settings: { map_size: number; move_range: number; vision_radius: number; round_seconds: number; table_talk: boolean; full_round_timer: boolean };
   status: 'active' | 'finished';
   result: GameResult | null;
 }
@@ -38,10 +38,10 @@ export function aiState(state: GameState, player: PlayerId): AiState {
     known_mines: state.mines
       .filter((m) => me.knownMines[m.id] !== undefined)
       .map((m) => ({ id: m.id, x: m.x, y: m.y, payout: m.payout, collectable: me.knownMines[m.id]! < state.round })),
-    visible_enemy_workers: opp.workers.filter((w) => seenBy(me.workers, w)).map((w) => ({ x: w.x, y: w.y })),
+    visible_enemy_workers: opp.workers.filter((w) => seenBy(me.workers, w, s.visionRadius)).map((w) => ({ x: w.x, y: w.y })),
     enemy_last_seen: me.enemySightings.map((s) => ({ ...s })),
     opponent: { gold: opp.gold2 / 2, workers: opp.workers.length },
-    settings: { map_size: s.mapSize, move_range: s.moveRange, round_seconds: s.roundSeconds, table_talk: s.tableTalk, full_round_timer: s.fullRoundTimer },
+    settings: { map_size: s.mapSize, move_range: s.moveRange, vision_radius: s.visionRadius, round_seconds: s.roundSeconds, table_talk: s.tableTalk, full_round_timer: s.fullRoundTimer },
     status: state.status,
     result: state.result,
   };
