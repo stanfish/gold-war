@@ -21,6 +21,9 @@ export function useGameSocket<T extends ServerMessage>(seat: PlayerId | 'god', k
       const ws = new WebSocket(`${proto}://${location.host}/ws?seat=${seat}&k=${encodeURIComponent(key)}`);
       wsRef.current = ws;
       ws.onopen = () => setConnected(true);
+      // Keep-alive: free hosts (e.g. Render) sleep after ~15 min without incoming traffic, even mid-game.
+      const ping = setInterval(() => ws.readyState === ws.OPEN && ws.send(JSON.stringify({ type: 'ping' })), 4 * 60_000);
+      ws.addEventListener('close', () => clearInterval(ping));
       ws.onmessage = (e) => {
         const m = JSON.parse(e.data) as ServerMessage;
         if (m.type === 'error') setError(m.message);

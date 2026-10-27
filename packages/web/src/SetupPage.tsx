@@ -4,10 +4,22 @@ import { defaultSettings, type AgentOption, type CreateGameResponse, type Player
 interface Meta {
   agents: AgentOption[];
   herdrAvailable: boolean;
+  /** false on public hosting: only human and player-with-AI seats. */
+  aiSeats: boolean;
+  passwordRequired: boolean;
   sizeDefaults: Record<number, { mineCount: number; mineMin: number; mineMax: number; moveRange: number }>;
 }
 
 type Mode = 'pvp' | 'pva' | 'ava' | 'rva' | 'rvp' | 'rvr';
+
+const MODES: { id: Mode; label: string; ai: boolean }[] = [
+  { id: 'pvp', label: 'Player vs Player', ai: false },
+  { id: 'pva', label: 'Player vs AI', ai: true },
+  { id: 'ava', label: 'AI vs AI', ai: true },
+  { id: 'rva', label: 'Player with AI vs AI', ai: true },
+  { id: 'rvp', label: 'Player with AI vs Player', ai: false },
+  { id: 'rvr', label: 'Player with AI vs Player with AI', ai: false },
+];
 
 const ROUND_COUNTS = [10, 20, 30, 40, 50];
 
@@ -19,11 +31,15 @@ export function SetupPage() {
   const [result, setResult] = useState<CreateGameResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState('');
 
   useEffect(() => {
     fetch('/api/meta')
       .then((r) => r.json())
-      .then(setMeta)
+      .then((m: Meta) => {
+        setMeta(m);
+        if (!m.aiSeats) setMode((cur) => (MODES.find((x) => x.id === cur)?.ai ? 'rvp' : cur));
+      })
       .catch(() => setError('Server not reachable'));
   }, []);
 
@@ -53,7 +69,7 @@ export function SetupPage() {
       const r = await fetch('/api/games', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ settings, seats }),
+        body: JSON.stringify({ settings, seats, ...(meta?.passwordRequired && { password }) }),
       });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error ?? r.statusText);
@@ -94,12 +110,11 @@ export function SetupPage() {
         <label>
           Mode
           <select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
-            <option value="pvp">Player vs Player</option>
-            <option value="pva">Player vs AI</option>
-            <option value="ava">AI vs AI</option>
-            <option value="rva">Player with AI vs AI</option>
-            <option value="rvp">Player with AI vs Player</option>
-            <option value="rvr">Player with AI vs Player with AI</option>
+            {MODES.filter((m) => m.ai === false || meta?.aiSeats !== false).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
           </select>
         </label>
         {hasRelay && (
@@ -210,7 +225,14 @@ export function SetupPage() {
         {usesHerdr && meta && !meta.herdrAvailable && (
           <p className="danger small">herdr server not reachable — CLI agents cannot be launched. Start herdr (run `herdr` in a terminal), or pick “bot”.</p>
         )}
-        <button className="primary" disabled={busy || payoutInvalid} onClick={create}>
+        {meta?.passwordRequired && (
+          <label>
+            Game password
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="needed to start a game" />
+            <span className="muted small">Starting a game ends the one in progress, so this server asks for a password.</span>
+          </label>
+        )}
+        <button className="primary" disabled={busy || payoutInvalid || (meta?.passwordRequired && !password)} onClick={create}>
           {busy ? 'Creating…' : 'Start game'}
         </button>
         {error && <p className="danger">{error}</p>}

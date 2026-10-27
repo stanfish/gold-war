@@ -9,5 +9,9 @@
     "dev": "pnpm -C packages/server dev & pnpm -C packages/web dev",
     "build": "pnpm -C packages/web build",
     "start": "pnpm -C packages/server start"
+  },
+  "packageManager": "pnpm@9.7.0",
+  "engines": {
+    "node": ">=22"
   }
 }

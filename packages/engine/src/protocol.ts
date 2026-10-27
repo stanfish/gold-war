@@ -41,6 +41,8 @@ export interface CreateGameRequest {
   settings: Settings;
   seats: Record<PlayerId, SeatConfig>;
   seed?: number;
+  /** Required when the server sets GOLDWAR_CREATE_PASSWORD. */
+  password?: string;
 }
 
 export interface CreateGameResponse {
@@ -117,4 +119,6 @@ export type ClientMessage =
   /** Relay seats: the outside AI's raw reply, parsed by the server. */
   | { type: 'relay'; text: string }
   /** After game over (GOD view, or seats that are not AI): new game, same seats and settings. */
-  | { type: 'rematch' };
+  | { type: 'rematch' }
+  /** Keep-alive so idle-sleeping hosts see activity during long rounds. Ignored. */
+  | { type: 'ping' };

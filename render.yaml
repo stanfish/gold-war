@@ -1,0 +1,21 @@
+# Render Blueprint: one free web service that serves the UI and the game WebSocket.
+# Public hosting runs human and player-with-AI seats only (no AI agents on the server).
+services:
+  - type: web
+    name: gold-war
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: corepack enable && pnpm start
+    healthCheckPath: /api/meta
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0
+      - key: GOLDWAR_HUMAN_SEATS_ONLY
+        value: "1"
+      # Set the value in the Render dashboard when creating the Blueprint.
+      - key: GOLDWAR_CREATE_PASSWORD
+        sync: false

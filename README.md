@@ -21,6 +21,13 @@ Dev mode with hot reload: `pnpm -C packages/server dev` and `pnpm -C packages/we
 
 Play from other machines on your LAN: prefix with `HOST=0.0.0.0` (e.g. `HOST=0.0.0.0 pnpm start`), then open the links via this machine's IP, e.g. `http://<lan-ip>:8787/player1?k=…`. Default binds loopback only. Note: game creation has no auth, so anyone on the network can start a new game.
 
+### Hosting (Render free tier)
+
+`render.yaml` deploys one free web service (Blueprint): Render dashboard → **New → Blueprint** → pick this repo, and set
+`GOLDWAR_CREATE_PASSWORD` when asked. Public hosting runs with `GOLDWAR_HUMAN_SEATS_ONLY=1` (Player and Player with AI
+modes only; no AI agents run on the server). Free instances sleep after ~15 min idle (first visit then takes about a
+minute) and lose the game in progress; open pages send a keep-alive ping so a running game stays awake.
+
 ### CLI agents (herdr)
 
 Start the server **from inside a herdr pane** (`HERDR_ENV=1`). For each AI seat the server:

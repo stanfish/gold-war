@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import { dirname, join } from 'node:path';
@@ -25,6 +26,17 @@ const PORT = Number(process.env.PORT ?? 8787);
 // Loopback by default; HOST=0.0.0.0 exposes the game to the LAN.
 const HOST = process.env.HOST ?? '127.0.0.1';
 const WEB_DIST = join(ROOT, 'packages/web/dist');
+/** Public hosting: only human and player-with-AI seats (no AI agents run on this server). */
+const HUMAN_SEATS_ONLY = process.env.GOLDWAR_HUMAN_SEATS_ONLY === '1';
+/** If set, creating a game requires this password (starting a game ends the one in progress). */
+const CREATE_PASSWORD = process.env.GOLDWAR_CREATE_PASSWORD || null;
+
+function passwordOk(given: unknown): boolean {
+  if (!CREATE_PASSWORD) return true;
+  if (typeof given !== 'string') return false;
+  const h = (s: string) => createHash('sha256').update(s).digest();
+  return timingSafeEqual(h(given), h(CREATE_PASSWORD));
+}
 
 const makeAi: AiFactory = (agent, ctx) => (agent === 'bot' ? new BotPlayer(ctx) : new HerdrAgentPlayer(agent, ctx));
 
@@ -41,8 +53,10 @@ async function agentList(): Promise<AgentOption[]> {
 const app = Fastify({ logger: { level: 'info' } });
 
 app.get('/api/meta', async () => ({
-  agents: await agentList(),
-  herdrAvailable: await herdrAvailable(),
+  agents: HUMAN_SEATS_ONLY ? [] : await agentList(),
+  herdrAvailable: HUMAN_SEATS_ONLY ? false : await herdrAvailable(),
+  aiSeats: !HUMAN_SEATS_ONLY,
+  passwordRequired: !!CREATE_PASSWORD,
   sizeDefaults: SIZE_DEFAULTS,
 }));
 
@@ -52,10 +66,12 @@ app.get('/api/game', async () =>
 
 app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
   const body = req.body;
+  if (!passwordOk(body?.password)) return reply.code(403).send({ error: 'wrong game password' });
   const errs = body?.settings ? validateSettings(body.settings) : ['settings missing'];
   for (const p of PLAYERS) {
     const seat = body?.seats?.[p];
     if (!seat || (seat.type !== 'human' && seat.type !== 'relay' && seat.type !== 'ai')) errs.push(`seat ${p} invalid`);
+    else if (seat.type === 'ai' && HUMAN_SEATS_ONLY) errs.push(`seat ${p}: AI seats are disabled on this server`);
     else if (seat.type === 'ai' && seat.agent !== 'bot' && !findPreset(seat.agent)) errs.push(`unknown agent ${seat.agent}`);
   }
   if (errs.length) return reply.code(400).send({ error: errs.join('; ') });
@@ -67,7 +83,7 @@ app.post<{ Body: CreateGameRequest }>('/api/games', async (req, reply) => {
     if (seat.type === 'ai') seat.label = seat.agent === 'bot' ? 'bot' : (findPreset(seat.agent)?.label ?? seat.agent);
   }
   // aiPaceMs: pause between AI-only rounds, long enough for the GOD view to play each round's animation.
-  const s = launch(new GameSession(body, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 3500 }));
+  const s = launch(new GameSession({ settings: body.settings, seats: body.seats, seed: body.seed }, { makeAi, logDir: join(ROOT, 'games'), aiPaceMs: 3500 }));
 
   const res: CreateGameResponse = { gameId: s.id, links: { god: `/god?k=${s.keys.god}` } };
   if (s.keys.p1) res.links.p1 = `/player1?k=${s.keys.p1}`;
@@ -160,7 +176,9 @@ app.server.on('upgrade', (req, socket, head) => {
         return;
       }
       const err =
-        msg.type === 'submit'
+        msg.type === 'ping'
+          ? null
+          : msg.type === 'submit'
           ? s.submit(role, msg)
           : msg.type === 'chat'
             ? s.postChat(role, msg.text)
@@ -179,7 +197,7 @@ app.server.on('upgrade', (req, socket, head) => {
 });
 
 await app.listen({ port: PORT, host: HOST });
-if (!(await herdrAvailable())) app.log.warn('herdr server not reachable: herdr-backed AI players will fail. Built-in "bot" works.');
+if (!HUMAN_SEATS_ONLY && !(await herdrAvailable())) app.log.warn('herdr server not reachable: herdr-backed AI players will fail. Built-in "bot" works.');
 
 // Close agent panes/workspaces on shutdown so no orphaned agents keep running.
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
